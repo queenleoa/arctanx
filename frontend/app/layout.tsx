@@ -1,19 +1,21 @@
-import type { Metadata } from 'next';
-import './globals.css';
+import { ClerkProvider } from '@clerk/nextjs'
+import './globals.css'
 
-export const metadata: Metadata = {
+export const metadata = {
   title: 'arctan(x) - Institutional Stablecoin Forex DEX',
-  description: 'Chain agnostic institutional grade stablecoin forex perps DEX',
-};
+  description: 'Chain-agnostic institutional-grade stablecoin forex perps DEX with margin rehypothecation',
+}
 
 export default function RootLayout({
   children,
 }: {
-  children: React.ReactNode;
+  children: React.ReactNode
 }) {
   return (
-    <html lang="en">
-      <body>{children}</body>
-    </html>
-  );
+    <ClerkProvider>
+      <html lang="en">
+        <body>{children}</body>
+      </html>
+    </ClerkProvider>
+  )
 }

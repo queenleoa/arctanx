@@ -1,126 +1,122 @@
 'use client';
 
+import { useUser, UserButton } from '@clerk/nextjs';
 import { useState, useEffect } from 'react';
-import { createPublicClient, http, formatUnits } from 'viem';
-import Image from 'next/image';
-
-const arcTestnet = {
-  id: 5042002,
-  name: 'Arc Testnet',
-  network: 'arc-testnet',
-  nativeCurrency: {
-    decimals: 6,
-    name: 'USDC',
-    symbol: 'USDC',
-  },
-  rpcUrls: {
-    default: { http: ['https://arc-testnet.rpc.caldera.xyz/http'] },
-    public: { http: ['https://arc-testnet.rpc.caldera.xyz/http'] },
-  },
-} as const;
-
-const publicClient = createPublicClient({
-  chain: arcTestnet,
-  transport: http(),
-});
+import { WalletInterface } from '@/app/components/WalletInterface';
 
 interface Wallet {
   address: string;
   walletId: string;
+  walletSetId: string;
 }
 
 export default function Home() {
+  const { user, isLoaded } = useUser();
   const [wallet, setWallet] = useState<Wallet | null>(null);
-  const [balance, setBalance] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const createWallet = async () => {
+  useEffect(() => {
+    if (isLoaded && user) {
+      loadOrCreateWallet();
+    }
+  }, [isLoaded, user]);
+
+  const loadOrCreateWallet = async () => {
     setLoading(true);
+    setError(null);
+    
     try {
+      // Check if wallet exists in Clerk metadata
+      const existingWallet = user?.publicMetadata?.wallet as Wallet | undefined;
+      
+      if (existingWallet?.address) {
+        setWallet(existingWallet);
+        setLoading(false);
+        return;
+      }
+
+      // Create new wallet
       const response = await fetch('/api/create-wallet', {
         method: 'POST',
       });
+
       const data = await response.json();
-      setWallet(data);
-      localStorage.setItem('wallet', JSON.stringify(data));
-    } catch (error) {
-      console.error('Error creating wallet:', error);
-    }
-    setLoading(false);
-  };
 
-  const fetchBalance = async () => {
-    if (!wallet?.address) return;
-    
-    try {
-      const balance = await publicClient.getBalance({
-        address: wallet.address as `0x${string}`,
+      if (data.error) {
+        setError(data.error);
+        setLoading(false);
+        return;
+      }
+
+      // Save wallet to Clerk metadata
+      await fetch('/api/save-wallet-metadata', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
       });
-      setBalance(formatUnits(balance, 6));
-    } catch (error) {
-      console.error('Error fetching balance:', error);
+
+      setWallet(data);
+    } catch (err: any) {
+      console.error('Wallet error:', err);
+      setError(err.message || 'Failed to load wallet');
+    } finally {
+      setLoading(false);
     }
   };
 
-  useEffect(() => {
-    const saved = localStorage.getItem('wallet');
-    if (saved) {
-      setWallet(JSON.parse(saved));
-    }
-  }, []);
-
-  useEffect(() => {
-    if (wallet) {
-      fetchBalance();
-      const interval = setInterval(fetchBalance, 5000);
-      return () => clearInterval(interval);
-    }
-  }, [wallet]);
+  if (!isLoaded) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <main className="min-h-screen bg-white p-8">
-      <div className="max-w-4xl mx-auto">
-        <div className="flex items-center gap-3 mb-8">
-          <Image src="/logo-image.png" alt="arctan(x)" width={48} height={48} />
-          <h1 className="text-3xl font-bold">arctan(x)</h1>
-        </div>
-
-        <div className="max-w-md">
-          <h2 className="text-2xl font-bold mb-4">Arc Testnet Wallet</h2>
-          
-          {!wallet ? (
-            <button
-              onClick={createWallet}
-              disabled={loading}
-              className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 disabled:opacity-50"
-            >
-              {loading ? 'Creating...' : 'Create Wallet'}
-            </button>
-          ) : (
-            <div className="space-y-4">
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <p className="text-sm text-gray-600 mb-1">Address</p>
-                <p className="font-mono text-sm break-all">{wallet.address}</p>
-              </div>
-              
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <p className="text-sm text-gray-600 mb-1">USDC Balance</p>
-                <p className="text-2xl font-bold">
-                  {balance !== null ? `${balance} USDC` : 'Loading...'}
-                </p>
-              </div>
-
-              <a
-                href={`https://faucet.circle.com/?address=${wallet.address}&chain=ARC`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block w-full bg-green-600 text-white py-3 px-4 rounded-lg text-center hover:bg-green-700"
-              >
-                Get Testnet USDC
-              </a>
+    <main className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 p-8">
+      <div className="max-w-6xl mx-auto">
+        {/* Header */}
+        <div className="flex justify-between items-center mb-8">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center text-white text-xl font-bold">
+              x
             </div>
-          )}
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">arctan(x)</h1>
+              <p className="text-gray-600">Institutional Stablecoin Forex DEX</p>
+            </div>
+          </div>
+          
+          <UserButton afterSignOutUrl="/" />
         </div>
+
+        {/* Wallet Section */}
+        {loading ? (
+          <div className="text-center py-20">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-gray-600">Setting up your wallet...</p>
+          </div>
+        ) : error ? (
+          <div className="bg-red-50 border border-red-200 rounded-2xl p-6 text-center">
+            <p className="text-red-800">{error}</p>
+            <button
+              onClick={loadOrCreateWallet}
+              className="mt-4 px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+            >
+              Try Again
+            </button>
+          </div>
+        ) : wallet ? (
+          <WalletInterface wallet={wallet} />
+        ) : (
+          <div className="text-center py-20">
+            <p className="text-gray-600">Initializing...</p>
+          </div>
+        )}
       </div>
     </main>
   );
