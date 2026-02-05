@@ -9,17 +9,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const wallet = await request.json();
+    const { walletSetId, wallets, sharedAddress } = await request.json();
 
-    // Save wallet to Clerk user metadata
+    // Save wallets to Clerk user metadata
     const client = await clerkClient();
     await client.users.updateUser(userId, {
       publicMetadata: {
-        wallet: {
-          address: wallet.address,
-          walletId: wallet.walletId,
-          walletSetId: wallet.walletSetId,
-        },
+        walletSetId,
+        wallets,
+        sharedAddress,
       },
     });
 

@@ -15,57 +15,53 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { walletId, recipient, amount } = await request.json();
+    const { walletId, recipient, amount, blockchain } = await request.json();
 
-    if (!walletId || !recipient || !amount) {
+    if (!walletId || !recipient || !amount || !blockchain) {
       return NextResponse.json(
         { error: 'Missing required fields' },
         { status: 400 }
       );
     }
 
-    // Convert amount to smallest unit (6 decimals for USDC)
-    const amountInSmallestUnit = (parseFloat(amount) * 1_000_000).toString();
-
-    // Get token ID for Arc USDC (native token)
-    // For Arc testnet, USDC is the native gas token
+    // Get token ID for the blockchain
     const tokensResponse = await client.listTokens({
-      blockchain: 'ARC-TESTNET',
+      blockchain: blockchain as any,
     });
 
     const usdcToken = tokensResponse.data?.tokens?.find(
-      (t: any) => t.symbol === 'USDC' && t.blockchain === 'ARC-TESTNET'
+      (t: any) => t.symbol === 'USDC' && t.blockchain === blockchain
     );
 
     if (!usdcToken?.id) {
-      throw new Error('USDC token not found on Arc testnet');
+      throw new Error(`USDC token not found on ${blockchain}`);
     }
 
-    // Create transaction - using correct SDK parameter names
+    // Convert amount based on blockchain (Arc uses 6 decimals for transfers)
+    const decimals = 6; // USDC uses 6 decimals
+    const amountInSmallestUnit = (parseFloat(amount) * Math.pow(10, decimals)).toString();
+
+    // Create transaction
     const transactionResponse = await client.createTransaction({
       walletId,
       tokenId: usdcToken.id,
       destinationAddress: recipient,
-      amounts: [amountInSmallestUnit],  // SDK accepts "amounts" array
+      amount: [amountInSmallestUnit],
       fee: {
         type: 'level',
         config: {
           feeLevel: 'MEDIUM',
         },
       },
-    } as any);  // Type assertion to handle SDK type mismatch
+    });
 
     if (!transactionResponse.data) {
       throw new Error('Failed to create transaction');
     }
 
-    // Response structure may vary - handle both formats
-    const txData = transactionResponse.data as any;
-
     return NextResponse.json({
       success: true,
-      transactionId: txData.id || txData.challengeId || 'pending',
-      state: txData.state || txData.status || 'INITIATED',
+      transactionId: transactionResponse.data.id || 'pending',
     });
 
   } catch (error: any) {

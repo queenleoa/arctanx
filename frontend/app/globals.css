@@ -1,46 +1,49 @@
 @import "tailwindcss";
 
 :root {
-  /* Institutional color palette */
-  --color-primary: #1e3a8a;      /* Navy blue */
-  --color-primary-light: #3b82f6;
-  --color-secondary: #475569;     /* Slate gray */
-  --color-accent: #10b981;        /* Professional green for success */
-  --color-background: #f8fafc;    /* Clean off-white */
-  --color-surface: #ffffff;
-  --color-border: #e2e8f0;
-  --color-text-primary: #0f172a;
-  --color-text-secondary: #64748b;
+  /* Institutional Monochrome Palette */
+  --color-slate-50: #f8fafc;
+  --color-slate-100: #f1f5f9;
+  --color-slate-200: #e2e8f0;
+  --color-slate-300: #cbd5e1;
+  --color-slate-400: #94a3b8;
+  --color-slate-500: #64748b;
+  --color-slate-600: #475569;
+  --color-slate-700: #334155;
+  --color-slate-800: #1e293b;
+  --color-slate-900: #0f172a;
   
-  /* Typography - Professional system fonts */
-  --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-mono: ui-monospace, "SF Mono", "Monaco", "Cascadia Mono", monospace;
+  --color-emerald-100: #d1fae5;
+  --color-emerald-600: #059669;
+  --color-emerald-700: #047857;
+  
+  /* Professional Typography */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Monaco, "Cascadia Code", monospace;
+}
+
+* {
+  box-sizing: border-box;
 }
 
 body {
   font-family: var(--font-sans);
-  color: var(--color-text-primary);
-  background-color: var(--color-background);
+  color: var(--color-slate-900);
+  background-color: var(--color-slate-50);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Remove default gradients, use solid colors */
-.institutional-card {
-  background: white;
-  border: 1px solid var(--color-border);
-  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+/* Clean, minimal button styles */
+button {
+  font-family: var(--font-sans);
 }
 
-.institutional-button-primary {
-  background: var(--color-primary);
-  color: white;
-  border: none;
+input, textarea, select {
+  font-family: var(--font-sans);
 }
 
-.institutional-button-primary:hover {
-  background: var(--color-primary-light);
-}
-
-/* Professional data tables */
+/* Professional table styling */
 table {
   border-collapse: collapse;
   width: 100%;
@@ -52,13 +55,52 @@ th {
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--color-text-secondary);
-  border-bottom: 1px solid var(--color-border);
+  color: var(--color-slate-600);
+  border-bottom: 1px solid var(--color-slate-200);
   padding: 0.75rem 1rem;
+  background: var(--color-slate-50);
 }
 
 td {
   padding: 0.75rem 1rem;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-slate-100);
   font-size: 0.875rem;
+  color: var(--color-slate-700);
+}
+
+/* Remove Clerk branding customizations */
+.cl-internal-b3fm6y {
+  display: none;
+}
+
+/* Smooth transitions */
+* {
+  transition-property: color, background-color, border-color;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
+/* Focus states for accessibility */
+:focus-visible {
+  outline: 2px solid var(--color-slate-900);
+  outline-offset: 2px;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-slate-100);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-slate-400);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-slate-500);
 }

@@ -26,30 +26,47 @@ export async function POST() {
 
     const walletSetId = walletSetResponse.data.walletSet.id;
 
-    // Create wallet on Arc testnet
-    const walletResponse = await client.createWallets({
+    // Create ONE wallet that exists on multiple EVM chains
+    // This gives the SAME address on Arc and Base for Circle Gateway unification
+    const walletsResponse = await client.createWallets({
       accountType: 'SCA',
-      blockchains: ['ARC-TESTNET'],
-      count: 1,
+      blockchains: ['ARC-TESTNET', 'BASE-SEPOLIA'],
+      count: 1, // Single wallet, multiple chains
       walletSetId,
     });
 
-    if (!walletResponse.data?.wallets?.[0]) {
-      throw new Error('Failed to create wallet');
+    if (!walletsResponse.data?.wallets || walletsResponse.data.wallets.length < 2) {
+      throw new Error('Failed to create wallet on all networks');
     }
 
-    const wallet = walletResponse.data.wallets[0];
+    const wallets = walletsResponse.data.wallets;
+
+    // Both Arc and Base will have the SAME address (EVM chains)
+    const sharedAddress = wallets[0].address;
+    const arcWallet = wallets.find((w: any) => w.blockchain === 'ARC-TESTNET');
+    const baseWallet = wallets.find((w: any) => w.blockchain === 'BASE-SEPOLIA');
 
     return NextResponse.json({
-      address: wallet.address,
-      walletId: wallet.id,
       walletSetId,
+      sharedAddress, // Same address on both chains
+      wallets: {
+        arc: {
+          address: arcWallet?.address,
+          walletId: arcWallet?.id,
+          blockchain: 'ARC-TESTNET',
+        },
+        base: {
+          address: baseWallet?.address,
+          walletId: baseWallet?.id,
+          blockchain: 'BASE-SEPOLIA',
+        },
+      },
     });
 
   } catch (error: any) {
-    console.error('Error creating wallet:', error);
+    console.error('Error creating wallets:', error);
     return NextResponse.json(
-      { error: error.message || 'Failed to create wallet' },
+      { error: error.message || 'Failed to create wallets' },
       { status: 500 }
     );
   }
