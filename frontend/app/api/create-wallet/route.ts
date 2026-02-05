@@ -26,29 +26,43 @@ export async function POST() {
 
     const walletSetId = walletSetResponse.data.walletSet.id;
 
-    // Create ONE wallet that exists on multiple EVM chains
-    // This gives the SAME address on Arc and Base for Circle Gateway unification
-    const walletsResponse = await client.createWallets({
-      accountType: 'SCA',
+    // Create EVM wallets (Arc + Base) with SAME address using refId
+    // Using EOA (default) instead of SCA for Gateway compatibility
+    const evmWalletsResponse = await client.createWallets({
       blockchains: ['ARC-TESTNET', 'BASE-SEPOLIA'],
-      count: 1, // Single wallet, multiple chains
+      count: 1,
       walletSetId,
+      metadata: [{ refId: 'gateway-evm-wallet' }], // This ensures same address on both chains
     });
 
-    if (!walletsResponse.data?.wallets || walletsResponse.data.wallets.length < 2) {
-      throw new Error('Failed to create wallet on all networks');
+    if (!evmWalletsResponse.data?.wallets || evmWalletsResponse.data.wallets.length < 2) {
+      throw new Error('Failed to create EVM wallets on all networks');
     }
 
-    const wallets = walletsResponse.data.wallets;
+    const evmWallets = evmWalletsResponse.data.wallets;
 
-    // Both Arc and Base will have the SAME address (EVM chains)
-    const sharedAddress = wallets[0].address;
-    const arcWallet = wallets.find((w: any) => w.blockchain === 'ARC-TESTNET');
-    const baseWallet = wallets.find((w: any) => w.blockchain === 'BASE-SEPOLIA');
+    // Create Solana wallet separately (different address, EOA by default)
+    const solanaWalletsResponse = await client.createWallets({
+      blockchains: ['SOL-DEVNET'],
+      count: 1,
+      walletSetId,
+      // No refId here - Solana will have its own address
+    });
+
+    if (!solanaWalletsResponse.data?.wallets || solanaWalletsResponse.data.wallets.length === 0) {
+      throw new Error('Failed to create Solana wallet');
+    }
+
+    const solanaWallet = solanaWalletsResponse.data.wallets[0];
+
+    // Both Arc and Base will have the SAME address (via refId)
+    const sharedAddress = evmWallets[0].address;
+    const arcWallet = evmWallets.find((w: any) => w.blockchain === 'ARC-TESTNET');
+    const baseWallet = evmWallets.find((w: any) => w.blockchain === 'BASE-SEPOLIA');
 
     return NextResponse.json({
       walletSetId,
-      sharedAddress, // Same address on both chains
+      sharedAddress, // Same address on Arc and Base
       wallets: {
         arc: {
           address: arcWallet?.address,
@@ -59,6 +73,11 @@ export async function POST() {
           address: baseWallet?.address,
           walletId: baseWallet?.id,
           blockchain: 'BASE-SEPOLIA',
+        },
+        solana: {
+          address: solanaWallet.address,
+          walletId: solanaWallet.id,
+          blockchain: 'SOL-DEVNET',
         },
       },
     });

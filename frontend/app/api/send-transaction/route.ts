@@ -15,7 +15,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { walletId, recipient, amount, blockchain } = await request.json();
+    const { walletId, recipient, amount, blockchain, asset = 'USDC' } = await request.json();
 
     if (!walletId || !recipient || !amount || !blockchain) {
       return NextResponse.json(
@@ -24,29 +24,23 @@ export async function POST(request: Request) {
       );
     }
 
-    // Get token ID for the blockchain
-    const tokensResponse = await client.listTokens({
-      blockchain: blockchain as any,
-    });
-
-    const usdcToken = tokensResponse.data?.tokens?.find(
-      (t: any) => t.symbol === 'USDC' && t.blockchain === blockchain
-    );
-
-    if (!usdcToken?.id) {
-      throw new Error(`USDC token not found on ${blockchain}`);
+    // Determine decimals based on blockchain and asset
+    let decimals = 6; // Default for most USDC implementations
+    
+    if (blockchain === 'ARC-TESTNET' && asset === 'USDC') {
+      decimals = 18; // Arc native USDC uses 18 decimals
     }
 
-    // Convert amount based on blockchain (Arc uses 6 decimals for transfers)
-    const decimals = 6; // USDC uses 6 decimals
     const amountInSmallestUnit = (parseFloat(amount) * Math.pow(10, decimals)).toString();
 
-    // Create transaction
+    // For Circle API, we need to specify the token ID
+    // The API will look up the appropriate token based on blockchain and symbol
     const transactionResponse = await client.createTransaction({
       walletId,
-      tokenId: usdcToken.id,
+      blockchain: blockchain as any,
+      tokenAddress: asset === 'USDC' ? undefined : undefined, // Let Circle resolve this
       destinationAddress: recipient,
-      amount: [amountInSmallestUnit],
+      amounts: [amountInSmallestUnit],
       fee: {
         type: 'level',
         config: {
@@ -62,6 +56,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       transactionId: transactionResponse.data.id || 'pending',
+      challengeId: transactionResponse.data.challengeId,
     });
 
   } catch (error: any) {

@@ -11,7 +11,7 @@ export function BrandingSection() {
           </div>
           <div>
             <h1 className="text-4xl font-bold text-slate-900">arctan(x)</h1>
-            <p className="text-sm text-slate-600 font-medium mt-1">Institutional Stablecoin Infrastructure</p>
+            <p className="text-sm text-slate-600 font-medium mt-1">Institutional-grade Stablepair Forex Derivatives</p>
           </div>
         </div>
       </div>
@@ -19,11 +19,10 @@ export function BrandingSection() {
       {/* Main Value Proposition */}
       <div className="space-y-6 mb-12">
         <h2 className="text-3xl font-semibold text-slate-900 leading-tight">
-          Chain-Agnostic Stablecoin<br />Forex Derivatives Exchange
+          Chain-Agnostic Capital-Efficient<br />Stablecoin Forex Perpetuals Exchange
         </h2>
         <p className="text-lg text-slate-700 leading-relaxed">
-          Enterprise-grade infrastructure for stablecoin forex perpetual futures 
-          with Circle Gateway unified balances across Arc and Base.
+          Circle Gateway unifies your stablecoin balances across all chains. Cross-chain trades and cross-chain margin rehypothecation in just one click.
         </p>
       </div>
 
@@ -79,8 +78,8 @@ export function BrandingSection() {
         </h3>
         <div className="grid grid-cols-2 gap-4 text-sm">
           <div>
-            <p className="text-slate-500 mb-1">Networks</p>
-            <p className="font-medium text-slate-900">Arc · Base</p>
+            <p className="text-slate-500 mb-1">Testnet Networks</p>
+            <p className="font-medium text-slate-900">Arc · Base . Solana</p>
           </div>
           <div>
             <p className="text-slate-500 mb-1">Assets</p>

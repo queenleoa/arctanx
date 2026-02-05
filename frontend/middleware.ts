@@ -1,6 +1,11 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
 
-const isPublicRoute = createRouteMatcher(['/sign-in(.*)', '/sign-up(.*)'])
+// Make the home route PUBLIC so users can see the landing page
+const isPublicRoute = createRouteMatcher([
+  '/',           // ← Add this - home page is now public
+  '/sign-in(.*)', 
+  '/sign-up(.*)'
+])
 
 export default clerkMiddleware(async (auth, request) => {
   if (!isPublicRoute(request)) {
