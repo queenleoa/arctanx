@@ -238,13 +238,12 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
 
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="flex border-b border-slate-200">
-          <button onClick={() => setActiveTab('overview')} className={'flex-1 px-6 py-4 text-sm font-semibold ' + (activeTab === 'overview' ? 'text-slate-900 border-b-2 border-slate-900 bg-slate-50' : 'text-slate-500')}>Overview</button>
-          <button onClick={() => setActiveTab('send')} className={'flex-1 px-6 py-4 text-sm font-semibold ' + (activeTab === 'send' ? 'text-slate-900 border-b-2 border-slate-900 bg-slate-50' : 'text-slate-500')}>Send</button>
+          <button onClick={() => setActiveTab('fund')} className={'flex-1 px-6 py-4 text-sm font-semibold ' + (activeTab === 'fund' ? 'text-slate-900 border-b-2 border-slate-900 bg-slate-50' : 'text-slate-500')}>Fund</button>
           <button onClick={() => setActiveTab('gateway')} className={'flex-1 px-6 py-4 text-sm font-semibold ' + (activeTab === 'gateway' ? 'text-slate-900 border-b-2 border-slate-900 bg-slate-50' : 'text-slate-500')}>Gateway</button>
         </div>
 
         <div className="p-6">
-          {activeTab === 'overview' && (
+          {activeTab === 'fund' && (
             <div className="space-y-6">
               <div className="bg-slate-50 rounded-lg p-6 border border-slate-200">
                 <h3 className="font-semibold text-slate-900 mb-4">Get Testnet Tokens</h3>
@@ -266,46 +265,11 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
             </div>
           )}
 
-          {activeTab === 'send' && (
-            <form onSubmit={handleSend} className="max-w-xl space-y-4">
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">Network</label>
-                <select value={selectedChain} onChange={(e) => setSelectedChain(e.target.value)} className="w-full px-4 py-3 border border-slate-300 rounded-lg">
-                  <option value="arc">Arc Testnet</option>
-                  <option value="base">Base Sepolia</option>
-                  <option value="solana">Solana Devnet</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">Asset</label>
-                <select value={asset} onChange={(e) => setAsset(e.target.value)} className="w-full px-4 py-3 border border-slate-300 rounded-lg">
-                  <option value="USDC">USDC</option>
-                  <option value="EURC">EURC</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">Recipient</label>
-                <input type="text" value={recipient} onChange={(e) => setRecipient(e.target.value)} placeholder="Address..." required className="w-full px-4 py-3 border border-slate-300 rounded-lg" />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">Amount</label>
-                <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" step="0.01" min="0" required className="w-full px-4 py-3 border border-slate-300 rounded-lg" />
-              </div>
-
-              <button type="submit" disabled={sending} className="w-full bg-slate-900 text-white py-3 px-4 rounded-lg font-semibold hover:bg-slate-800 disabled:opacity-50">
-                {sending ? 'Sending...' : 'Send ' + asset}
-              </button>
-            </form>
-          )}
-
           {activeTab === 'gateway' && (
             <div className="space-y-6">
               <div className="bg-emerald-50 rounded-lg p-6 border border-emerald-200">
                 <h3 className="font-bold text-slate-900 mb-2">Circle Gateway</h3>
-                <p className="text-sm text-slate-700">USDC unified across Arc and Base via CCTP with sub-500ms transfers.</p>
+                <p className="text-sm text-slate-700">USDC unified across Arc, Base and Solana via Circle Gateway.</p>
               </div>
             </div>
           )}

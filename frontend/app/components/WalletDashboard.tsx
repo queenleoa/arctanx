@@ -1,4 +1,5 @@
 'use client';
+import Image from "next/image";
 
 import { UserButton, useUser } from '@clerk/nextjs';
 import { useState, useEffect } from 'react';
@@ -27,13 +28,13 @@ export function WalletDashboard() {
   const loadOrCreateWallets = async () => {
     setLoading(true);
     setError(null);
-    
+
     try {
       // Check if wallets exist in Clerk metadata
       const existingWallets = user?.publicMetadata?.wallets as WalletData | undefined;
       const existingWalletSetId = user?.publicMetadata?.walletSetId as string | undefined;
       const existingSharedAddress = user?.publicMetadata?.sharedAddress as string | undefined;
-      
+
       if (existingWallets && existingWalletSetId && existingSharedAddress) {
         setWallets(existingWallets);
         setWalletSetId(existingWalletSetId);
@@ -88,17 +89,26 @@ export function WalletDashboard() {
     <div className="p-8">
       {/* Header */}
       <div className="max-w-7xl mx-auto mb-8 flex justify-between items-center">
+        {/* Left: logo + text */}
         <div className="flex items-center gap-4">
-          <div className="w-12 h-12 bg-slate-900 rounded-lg flex items-center justify-center">
-            <span className="text-white text-xl font-bold">x</span>
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900">arctan(x)</h1>
-            <p className="text-sm text-slate-600">Institutional Wallet Dashboard</p>
+          {/* Wordmark + subtitle */}
+          <div className="flex flex-col">
+            <Image
+              src="/logo-image.png"
+              alt="Arctan wordmark"
+              width={160}
+              height={32}
+              className="object-contain"
+              priority
+            />
+            <p className="text-sm text-slate-700">
+              Institutional Wallet Dashboard
+            </p>
           </div>
         </div>
-        
-        <UserButton 
+
+        {/* Right: user avatar (unchanged, pinned) */}
+        <UserButton
           appearance={{
             elements: {
               avatarBox: "w-10 h-10",
@@ -125,8 +135,8 @@ export function WalletDashboard() {
           </button>
         </div>
       ) : wallets && walletSetId && sharedAddress ? (
-        <MultiChainWalletInterface 
-          wallets={wallets} 
+        <MultiChainWalletInterface
+          wallets={wallets}
           walletSetId={walletSetId}
           sharedAddress={sharedAddress}
         />
