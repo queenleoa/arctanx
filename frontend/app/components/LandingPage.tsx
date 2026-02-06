@@ -64,9 +64,9 @@ export function LandingPage({ onGetStarted }: LandingPageProps) {
                   </svg>
                 </div>
                 <div>
-                  <h3 className="font-bold text-slate-900 mb-2">Multi-Stablecoin Support</h3>
+                  <h3 className="font-bold text-slate-900 mb-2">Cross-Chain Collateral Rehypothecation</h3>
                   <p className="text-sm text-slate-600">
-                    Trade USDC and EURC forex perpetuals with sub-500ms cross-chain transfers using Circle's native CCTP protocol
+                    Traditional finance Forex futures margins are not typically rehypothecated by the clearinghouse. We use Circle's CCTP protocol and virtual accounting to allow you to maiximise capital efficiency.
                   </p>
                 </div>
               </div>

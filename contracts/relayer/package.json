@@ -1,0 +1,17 @@
+{
+  "name": "perps-dex-relayer",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "start": "npx ts-node relayer.ts",
+    "deposit": "npx ts-node relayer.ts deposit",
+    "withdraw": "npx ts-node relayer.ts withdraw"
+  },
+  "dependencies": {
+    "ethers": "^6.13.0"
+  },
+  "devDependencies": {
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.0"
+  }
+}
