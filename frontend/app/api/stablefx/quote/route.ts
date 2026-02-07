@@ -24,7 +24,7 @@ export async function POST(request: Request) {
     const response = await fetch(`${STABLEFX_API_URL}/quotes`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${process.env.CIRCLE_API_KEY}`,
+        'Authorization': `Bearer ${process.env.STABLEFX_API_KEY}`,
         'Content-Type': 'application/json',
         'Accept': 'application/json',
       },
@@ -52,7 +52,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const quote = JSON.parse(responseText);
+    const responseData = JSON.parse(responseText);
+
+    // Extract quote from data wrapper
+    const quote = responseData.data || responseData;
 
     return NextResponse.json({ quote });
   } catch (error: any) {

@@ -1,54 +1,60 @@
 import { NextResponse } from 'next/server';
 import { initiateDeveloperControlledWalletsClient } from '@circle-fin/developer-controlled-wallets';
 
-const STABLEFX_API_KEY = process.env.STABLEFX_API_KEY!;
-const CIRCLE_API_KEY = process.env.CIRCLE_API_KEY!;
+const STABLEFX_API_KEY = process.env.STABLEFX_API_KEY!; // ✅ Use StableFX key for API calls
+const CIRCLE_API_KEY = process.env.CIRCLE_API_KEY!; // ✅ Use Circle key for SDK
 const CIRCLE_ENTITY_SECRET = process.env.CIRCLE_ENTITY_SECRET!;
 
 interface FundTradeRequestBody {
   walletId: string;
   tradeId: string;
+  contractTradeId: string;
 }
 
 export async function POST(request: Request) {
   try {
-    const { walletId, tradeId }: FundTradeRequestBody = await request.json();
+    const { walletId, tradeId, contractTradeId }: FundTradeRequestBody = await request.json();
 
-    console.log('[fund-trade] Starting trade funding', { walletId, tradeId });
+    console.log('[fund-trade] Starting trade funding', { walletId, tradeId, contractTradeId });
 
-    // Initialize Circle SDK - it handles entitySecretCiphertext internally
     const circleClient = initiateDeveloperControlledWalletsClient({
       apiKey: CIRCLE_API_KEY,
       entitySecret: CIRCLE_ENTITY_SECRET,
     });
 
-    // Get funding presign data from StableFX
+    // ✅ Use STABLEFX_API_KEY for StableFX API endpoints
     console.log('[fund-trade] Fetching funding presign data');
     const presignResponse = await fetch(
-      `https://api.stablefx.circle.com/v1/trades/${tradeId}/funding/presign`,
+      `https://api.circle.com/v1/exchange/stablefx/signatures/funding/presign`,
       {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${STABLEFX_API_KEY}`,
+          Authorization: `Bearer ${STABLEFX_API_KEY}`, // ✅ StableFX API key
           'Content-Type': 'application/json',
+          Accept: 'application/json',
         },
+        body: JSON.stringify({
+          contractTradeIds: [contractTradeId],
+          type: 'taker',
+        }),
       }
     );
 
     if (!presignResponse.ok) {
-      throw new Error(`Funding presign failed: ${presignResponse.status}`);
+      const errorText = await presignResponse.text();
+      throw new Error(`Funding presign failed: ${presignResponse.status} - ${errorText}`);
     }
 
     const presignData = await presignResponse.json();
+    console.log('[fund-trade] Presign data received');
 
-    // Sign the Permit2 EIP-712 data
+    // Sign with Circle SDK
     console.log('[fund-trade] Signing Permit2 authorization');
     const signResult = await circleClient.signTypedData({
       walletId: walletId,
-      data: JSON.stringify(presignData.Permit2), // Must be stringified
+      data: JSON.stringify(presignData.typedData),
     });
 
-    // ✅ Proper null checking - data is optional in SDK response
     if (!signResult.data?.signature) {
       throw new Error('No signature returned from Circle SDK');
     }
@@ -56,41 +62,55 @@ export async function POST(request: Request) {
     const signature = signResult.data.signature;
     console.log('[fund-trade] Signed:', signature.slice(0, 20) + '...');
 
-    // Submit funding with signature to StableFX
+    // ✅ Use STABLEFX_API_KEY for funding submission
     console.log('[fund-trade] Submitting funding');
     const fundingResponse = await fetch(
-      `https://api.stablefx.circle.com/v1/trades/${tradeId}/funding`,
+      `https://api.circle.com/v1/exchange/stablefx/fund`,
       {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${STABLEFX_API_KEY}`,
+          Authorization: `Bearer ${STABLEFX_API_KEY}`, // ✅ StableFX API key
           'Content-Type': 'application/json',
+          Accept: 'application/json',
         },
-        body: JSON.stringify({ signature }),
+        body: JSON.stringify({
+          type: 'taker',
+          signature,
+          permit2: presignData.typedData.message,
+        }),
       }
     );
 
     if (!fundingResponse.ok) {
-      throw new Error(`Funding submission failed: ${fundingResponse.status}`);
+      const errorText = await fundingResponse.text();
+      throw new Error(`Funding submission failed: ${fundingResponse.status} - ${errorText}`);
     }
 
-    // Poll for completion
+    // ✅ Use STABLEFX_API_KEY for status checks
+    console.log('[fund-trade] Polling for completion');
     let complete = false;
     let attempts = 0;
-    const maxAttempts = 60; // Longer timeout for blockchain confirmation
+    const maxAttempts = 60;
 
     while (!complete && attempts < maxAttempts) {
       await new Promise(r => setTimeout(r, 1000));
       attempts++;
 
       const statusResp = await fetch(
-        `https://api.stablefx.circle.com/v1/trades/${tradeId}`,
-        { headers: { Authorization: `Bearer ${STABLEFX_API_KEY}` } }
+        `https://api.circle.com/v1/exchange/stablefx/trades/${tradeId}`,
+        { 
+          headers: { 
+            Authorization: `Bearer ${STABLEFX_API_KEY}`, // ✅ StableFX API key
+            Accept: 'application/json',
+          } 
+        }
       );
 
       if (statusResp.ok) {
-        const statusData = await statusResp.json();
-        if (statusData.status === 'complete') {
+        const statusResult = await statusResp.json();
+        const statusData = statusResult.data || statusResult;
+        
+        if (statusData.status === 'complete' || statusData.status === 'settled') {
           complete = true;
           console.log('[fund-trade] Trade completed successfully');
         }

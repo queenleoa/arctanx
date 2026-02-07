@@ -176,7 +176,8 @@ export function StableFXSwap({
         body: JSON.stringify({
           tradeId: newTradeId,
           walletId: arcWalletId,
-          recipientAddress: walletAddress,
+          walletAddress: walletAddress,
+          quoteId: quote.id,
         }),
       });
 
