@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { createPublicClient, http, formatUnits } from 'viem';
 import { baseSepolia } from 'viem/chains';
 import { Connection, PublicKey } from '@solana/web3.js';
+import { TradingView } from './TradingView';
 
 const arcTestnet = {
   id: 5042002,
@@ -71,6 +72,7 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
   const [depositToken, setDepositToken] = useState('USDC');
   const [depositing, setDepositing] = useState(false);
   const [fundingChain, setFundingChain] = useState<string | null>(null);
+  const [showTrading, setShowTrading] = useState(false);
 
   const arcClient = createPublicClient({ chain: arcTestnet, transport: http() });
   const baseClient = createPublicClient({ chain: baseSepolia, transport: http() });
@@ -277,6 +279,16 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
     alert(name + ' address copied!');
   };
 
+  // If trading view is active, show that instead
+  if (showTrading) {
+    return (
+      <TradingView 
+        onBack={() => setShowTrading(false)}
+        usdcBalance={totalUSDC}
+      />
+    );
+  }
+
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-8">
@@ -405,6 +417,7 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
         <div className="flex border-b border-slate-200">
           <button onClick={() => setActiveTab('fund')} className={'flex-1 px-6 py-4 text-sm font-semibold ' + (activeTab === 'fund' ? 'text-slate-900 border-b-2 border-slate-900 bg-slate-50' : 'text-slate-500')}>Step 1: Fund</button>
           <button onClick={() => setActiveTab('gateway')} className={'flex-1 px-6 py-4 text-sm font-semibold ' + (activeTab === 'gateway' ? 'text-slate-900 border-b-2 border-slate-900 bg-slate-50' : 'text-slate-500')}>Step 2: Gateway</button>
+          <button onClick={() => setActiveTab('trade')} className={'flex-1 px-6 py-4 text-sm font-semibold ' + (activeTab === 'trade' ? 'text-slate-900 border-b-2 border-slate-900 bg-slate-50' : 'text-slate-500')}>Step 3: Trade</button>
         </div>
 
         <div className="p-6">
@@ -533,6 +546,48 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
                     Note: It may take up to 19 minutes for deposits to finalize and appear in your unified balance.
                   </p>
                 </form>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'trade' && (
+            <div className="space-y-6">
+              <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-lg p-8 text-white">
+                <div className="flex items-start justify-between mb-6">
+                  <div>
+                    <h3 className="text-2xl font-bold mb-2">Ready to Trade</h3>
+                    <p className="text-slate-300">
+                      Your wallet is funded and unified. Start trading EUR/USD perpetuals now.
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-slate-400 mb-1">Total Balance</p>
+                    <p className="text-3xl font-bold">${totalUSDC.toFixed(2)}</p>
+                    <p className="text-xs text-slate-400 mt-1">USDC Available</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-4 mb-6">
+                  <div className="bg-white/10 rounded-lg p-4 backdrop-blur-sm">
+                    <p className="text-xs text-slate-300 mb-1">Market</p>
+                    <p className="text-lg font-semibold">EUR/USD</p>
+                  </div>
+                  <div className="bg-white/10 rounded-lg p-4 backdrop-blur-sm">
+                    <p className="text-xs text-slate-300 mb-1">Margin (EURC support coming soon on Gateway)</p>
+                    <p className="text-lg font-semibold">USDC</p>
+                  </div>
+                  <div className="bg-white/10 rounded-lg p-4 backdrop-blur-sm">
+                    <p className="text-xs text-slate-300 mb-1">Settlement</p>
+                    <p className="text-lg font-semibold">USDC/EURC</p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setShowTrading(true)}
+                  className="w-full px-6 py-4 bg-white text-slate-900 font-bold rounded-lg hover:bg-slate-100 transition text-lg shadow-lg"
+                >
+                  Launch Trading Interface →
+                </button>
               </div>
             </div>
           )}
