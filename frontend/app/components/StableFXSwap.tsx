@@ -26,6 +26,7 @@ type SwapStep =
   | 'quote-ready'     // Quote received, awaiting confirmation
   | 'creating-trade'  // Creating trade
   | 'signing'         // Signing trade intent
+  | 'fetching-contract-id' // Fetching contractTradeId
   | 'funding'         // Funding the trade
   | 'complete'        // Trade complete
   | 'error';          // Error occurred
@@ -152,6 +153,7 @@ export function StableFXSwap({
 
     try {
       // Step 1: Create trade
+      console.log('[swap] Creating trade...');
       const createRes = await fetch('/api/stablefx/create-trade', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -166,9 +168,11 @@ export function StableFXSwap({
 
       const newTradeId = createData.trade.id;
       setTradeId(newTradeId);
+      console.log('[swap] Trade created:', newTradeId);
 
       // Step 2: Sign trade intent
       setStep('signing');
+      console.log('[swap] Signing trade...');
 
       const signRes = await fetch('/api/stablefx/sign-trade', {
         method: 'POST',
@@ -187,15 +191,40 @@ export function StableFXSwap({
         throw new Error(signData.error || 'Failed to sign trade');
       }
 
-      // Step 3: Fund the trade
+      console.log('[swap] Trade signed successfully');
+
+      // Step 3: Fetch the trade details to get contractTradeId
+      // After signing, the trade should have reached pending_settlement and have a contractTradeId
+      setStep('fetching-contract-id');
+      console.log('[swap] Fetching trade details for contractTradeId...');
+      
+      const tradeDetailsRes = await fetch(`/api/stablefx/get-trade?tradeId=${newTradeId}`, {
+        method: 'GET',
+      });
+
+      if (!tradeDetailsRes.ok) {
+        throw new Error('Failed to fetch trade details');
+      }
+
+      const tradeDetailsData = await tradeDetailsRes.json();
+      const contractTradeId = tradeDetailsData.trade?.contractTradeId;
+      
+      if (!contractTradeId) {
+        throw new Error('Trade not ready for funding - missing contractTradeId. Status: ' + (tradeDetailsData.trade?.status || 'unknown'));
+      }
+
+      console.log('[swap] Got contractTradeId:', contractTradeId);
+
+      // Step 4: Fund the trade
       setStep('funding');
+      console.log('[swap] Funding trade...');
 
       const fundRes = await fetch('/api/stablefx/fund-trade', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           tradeId: newTradeId,
-          contractTradeId: createData.trade.contractTradeId,
+          contractTradeId: contractTradeId,
           walletId: arcWalletId,
         }),
       });
@@ -205,6 +234,8 @@ export function StableFXSwap({
       if (!fundRes.ok || fundData.error) {
         throw new Error(fundData.error || 'Failed to fund trade');
       }
+
+      console.log('[swap] Trade funded successfully');
 
       setTxHashes({
         approval: fundData.approvalTxHash,
@@ -219,6 +250,7 @@ export function StableFXSwap({
       }, 5000);
 
     } catch (err: any) {
+      console.error('[swap] Error:', err);
       setError(err.message);
       setStep('error');
     }
@@ -495,17 +527,20 @@ export function StableFXSwap({
       )}
 
       {/* Processing Steps */}
-      {(step === 'creating-trade' || step === 'signing' || step === 'funding') && (
+      {(step === 'creating-trade' || step === 'signing' || step === 'fetching-contract-id' || step === 'funding') && (
         <div className="text-center py-12 space-y-4">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-slate-900 mx-auto"></div>
           <div>
             <p className="font-semibold text-slate-900 mb-2">
               {step === 'creating-trade' && 'Creating Trade on StableFX...'}
               {step === 'signing' && 'Signing Trade Intent...'}
+              {step === 'fetching-contract-id' && 'Preparing Trade for Funding...'}
               {step === 'funding' && 'Funding Trade Onchain...'}
             </p>
             <p className="text-sm text-slate-600">
-              This may take 30-60 seconds. Please wait.
+              {step === 'fetching-contract-id' 
+                ? 'Waiting for trade to reach pending_settlement status...'
+                : 'This may take 30-60 seconds. Please wait.'}
             </p>
           </div>
 

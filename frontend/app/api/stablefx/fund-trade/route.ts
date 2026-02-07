@@ -46,13 +46,21 @@ export async function POST(request: Request) {
     }
 
     const presignData = await presignResponse.json();
+    
+    // Handle both response formats: with or without 'data' wrapper
+    const presignPayload = presignData.data || presignData;
+    
+    if (!presignPayload.typedData) {
+      throw new Error('No typedData in presign response');
+    }
+    
     console.log('[fund-trade] Presign data received');
 
     // Sign with Circle SDK
     console.log('[fund-trade] Signing Permit2 authorization');
     const signResult = await circleClient.signTypedData({
       walletId: walletId,
-      data: JSON.stringify(presignData.typedData),
+      data: JSON.stringify(presignPayload.typedData),
     });
 
     if (!signResult.data?.signature) {
@@ -76,7 +84,7 @@ export async function POST(request: Request) {
         body: JSON.stringify({
           type: 'taker',
           signature,
-          permit2: presignData.typedData.message,
+          permit2: presignPayload.typedData.message,
         }),
       }
     );
@@ -109,6 +117,8 @@ export async function POST(request: Request) {
       if (statusResp.ok) {
         const statusResult = await statusResp.json();
         const statusData = statusResult.data || statusResult;
+        
+        console.log(`[fund-trade] Trade status: ${statusData.status}`);
         
         if (statusData.status === 'complete' || statusData.status === 'settled') {
           complete = true;

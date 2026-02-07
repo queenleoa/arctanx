@@ -234,7 +234,7 @@ export function TradingView({
               )}
               <div ref={chartContainerRef} className="min-h-[500px]" />
               <p className="text-xs text-slate-500 mt-2 text-center">
-                Chart updates every 10 seconds with last 10 minutes of price data
+                Forex Markets are closed on weekends. It is normal to see no forex index fluctuation on weekends. 
               </p>
             </div>
 
