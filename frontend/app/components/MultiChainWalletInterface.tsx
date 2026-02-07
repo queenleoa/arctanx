@@ -325,7 +325,19 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
 
   // ── Trading redirect ───────────────────────────────────────────────
   if (showTrading) {
-    return <TradingView onBack={() => setShowTrading(false)} usdcBalance={totalUSDC} />;
+    return (
+      <TradingView 
+        onBack={() => setShowTrading(false)} 
+        usdcBalance={totalUSDC}
+        eurcBalance={totalEURC}
+        walletAddress={sharedAddress}
+        arcWalletId={wallets.arc.walletId}
+        onRefreshBalances={() => {
+          fetchBalances();
+          fetchGatewayBalance();
+        }}
+      />
+    );
   }
 
   // ── Render ─────────────────────────────────────────────────────────
@@ -701,13 +713,13 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
                   <div>
                     <h3 className="text-2xl font-bold mb-2">Ready to Trade</h3>
                     <p className="text-slate-300">
-                      Your wallet is funded and unified. Start trading EUR/USD perpetuals now.
+                      Your wallet is funded. Start trading EUR/USD derivatives or swap via StableFX.
                     </p>
                   </div>
                   <div className="text-right">
                     <p className="text-xs text-slate-400 mb-1">Total Balance</p>
                     <p className="text-3xl font-bold">${totalUSDC.toFixed(2)}</p>
-                    <p className="text-xs text-slate-400 mt-1">USDC Available</p>
+                    <p className="text-xs text-slate-400 mt-1">USDC</p>
                   </div>
                 </div>
 
@@ -717,8 +729,8 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
                     <p className="text-lg font-semibold">EUR/USD</p>
                   </div>
                   <div className="bg-white/10 rounded-lg p-4 backdrop-blur-sm">
-                    <p className="text-xs text-slate-300 mb-1">Margin</p>
-                    <p className="text-lg font-semibold">USDC</p>
+                    <p className="text-xs text-slate-300 mb-1">Options</p>
+                    <p className="text-lg font-semibold">Spot & Perps</p>
                   </div>
                   <div className="bg-white/10 rounded-lg p-4 backdrop-blur-sm">
                     <p className="text-xs text-slate-300 mb-1">Settlement</p>
