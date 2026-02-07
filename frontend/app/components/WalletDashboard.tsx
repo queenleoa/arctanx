@@ -101,9 +101,6 @@ export function WalletDashboard() {
               className="object-contain"
               priority
             />
-            <p className="text-sm text-slate-700">
-              Institutional Wallet Dashboard
-            </p>
           </div>
         </div>
 

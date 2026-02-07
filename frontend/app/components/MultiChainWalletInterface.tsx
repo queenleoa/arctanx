@@ -464,13 +464,13 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
                   <p className="text-xs text-slate-600 mb-3 font-medium">Or use manual faucet links (if rate-limited):</p>
                   <div className="grid grid-cols-3 gap-3">
                     <a href={'https://faucet.circle.com/?address=' + sharedAddress + '&chain=ARC'} target="_blank" rel="noopener noreferrer" className="text-xs text-center bg-white border border-slate-300 rounded-lg py-2 px-3 hover:border-emerald-600 hover:bg-emerald-50 transition">
-                      Arc Faucet ↗
+                      USDC, EURC Faucet for Arc, Base and Solana ↗
                     </a>
                     <a href="https://www.alchemy.com/faucets/base-sepolia" target="_blank" rel="noopener noreferrer" className="text-xs text-center bg-white border border-slate-300 rounded-lg py-2 px-3 hover:border-blue-600 hover:bg-blue-50 transition">
-                      Base Faucet ↗
+                      Native Faucet for Base ↗
                     </a>
-                    <a href={'https://faucet.circle.com/?address=' + wallets.solana.address + '&chain=SOL'} target="_blank" rel="noopener noreferrer" className="text-xs text-center bg-white border border-slate-300 rounded-lg py-2 px-3 hover:border-purple-600 hover:bg-purple-50 transition">
-                      Solana Faucet ↗
+                    <a href={'https://faucet.solana.com/?address=' + wallets.solana.address} target="_blank" rel="noopener noreferrer" className="text-xs text-center bg-white border border-slate-300 rounded-lg py-2 px-3 hover:border-purple-600 hover:bg-purple-50 transition">
+                      Native Faucet for solana ↗
                     </a>
                   </div>
                 </div>
@@ -506,6 +506,7 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
                     >
                       <option value="arc">Arc Testnet</option>
                       <option value="base">Base Sepolia</option>
+                      <option value="base">Sol Devnet</option>
                     </select>
                   </div>
 
@@ -517,7 +518,6 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
                       className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-900 focus:border-slate-900"
                     >
                       <option value="USDC">USDC</option>
-                      <option value="EURC">EURC</option>
                     </select>
                   </div>
 

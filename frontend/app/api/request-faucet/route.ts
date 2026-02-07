@@ -13,7 +13,7 @@ export async function POST(request: Request) {
     // Base Sepolia: request all three (native ETH, USDC, EURC)
     // Solana Devnet: request all three (native SOL, USDC, EURC)
     const fundingConfig: Record<string, { native: boolean; usdc: boolean; eurc: boolean }> = {
-      'ARC-TESTNET': { native: true, usdc: false, eurc: true }, // native IS USDC
+      'ARC-TESTNET': { native: false, usdc: true, eurc: true }, // native IS USDC
       'BASE-SEPOLIA': { native: true, usdc: true, eurc: true },
       'SOL-DEVNET': { native: true, usdc: true, eurc: true },
     };

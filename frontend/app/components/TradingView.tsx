@@ -11,14 +11,13 @@ interface TradingViewProps {
 export function TradingView({ onBack, usdcBalance }: TradingViewProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<any>(null);
-  const candlestickSeriesRef = useRef<any>(null);
+  const lineSeriesRef = useRef<any>(null);
   
   const [tradingTab, setTradingTab] = useState<'long' | 'short' | 'swap'>('long');
   const [leverage, setLeverage] = useState('1');
   const [collateralAmount, setCollateralAmount] = useState('');
   const [currentPrice, setCurrentPrice] = useState<number | null>(null);
   const [positions, setPositions] = useState<any[]>([]);
-  const [timeframe, setTimeframe] = useState<'15' | '60' | '240' | 'D'>('15');
   const [loading, setLoading] = useState(true);
   const [symbol, setSymbol] = useState<'EURUSD'>('EURUSD');
 
@@ -39,23 +38,25 @@ export function TradingView({ onBack, usdcBalance }: TradingViewProps) {
       height: 500,
       timeScale: {
         timeVisible: true,
-        secondsVisible: false,
+        secondsVisible: true,
       },
     });
 
-    // @ts-ignore - TypeScript may have issues with the chart API
-    const candlestickSeries = chart.addCandlestickSeries({
-      upColor: '#10b981',
-      downColor: '#ef4444',
-      borderVisible: false,
-      wickUpColor: '#10b981',
-      wickDownColor: '#ef4444',
+    // Use line series instead of candlestick
+    const lineSeries = chart.addLineSeries({
+      color: '#2563eb',
+      lineWidth: 2,
+      priceFormat: {
+        type: 'price',
+        precision: 6,
+        minMove: 0.000001,
+      },
     });
 
     chartRef.current = chart;
-    candlestickSeriesRef.current = candlestickSeries;
+    lineSeriesRef.current = lineSeries;
 
-    console.log('Chart initialized');
+    console.log('Chart initialized with line series');
 
     // Handle resize
     const handleResize = () => {
@@ -74,136 +75,82 @@ export function TradingView({ onBack, usdcBalance }: TradingViewProps) {
     };
   }, []);
 
-  // Fetch historical data
-  useEffect(() => {
-    const fetchHistoricalData = async () => {
-      // Wait a bit to ensure chart is ready
-      if (!candlestickSeriesRef.current) {
-        console.log('Chart series not ready yet, waiting...');
-        setTimeout(() => {
-          if (candlestickSeriesRef.current) {
-            fetchHistoricalData();
-          }
-        }, 100);
-        return;
+  // Fetch recent price data
+  const fetchRecentPrices = async () => {
+    if (!lineSeriesRef.current) {
+      console.log('Line series not ready yet, waiting...');
+      return;
+    }
+
+    try {
+      console.log('Fetching recent prices for EURUSD...');
+      
+      const response = await fetch('/api/stork/recent?assets=EURUSD');
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('API error response:', errorText);
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
+      
+      const result = await response.json();
+      
+      console.log('Received recent price data:', result);
+      
+      if (result.data && Array.isArray(result.data) && result.data.length > 0) {
+        // Convert Stork prices to chart data
+        // Stork price is in format with 18 decimals (e.g., "1086990000000000000000" = 1.08699)
+        const chartData = result.data
+          .map((item: any) => ({
+            time: item.timestamp, // Unix timestamp in seconds
+            value: parseFloat(item.price) / 1e18, // Convert from 18 decimals
+          }))
+          .sort((a: any, b: any) => a.time - b.time); // Sort by time ascending
 
-      setLoading(true);
-      try {
-        // Get current time in seconds
-        const now = Math.floor(Date.now() / 1000);
-        console.log('Current timestamp:', now, 'Date:', new Date(now * 1000).toISOString());
+        console.log('Formatted chart data (first 3):', chartData.slice(0, 3));
+        console.log('Formatted chart data (last 3):', chartData.slice(-3));
+        console.log('Total data points:', chartData.length);
+
+        lineSeriesRef.current.setData(chartData);
         
-        let secondsAgo;
-        
-        // Calculate time range based on timeframe
-        // Use longer ranges to ensure we get data
-        switch(timeframe) {
-          case '15':
-            secondsAgo = 86400 * 7; // 7 days for 15min candles
-            break;
-          case '60':
-            secondsAgo = 86400 * 14; // 14 days for 1h candles
-            break;
-          case '240':
-            secondsAgo = 86400 * 30; // 30 days for 4h candles
-            break;
-          case 'D':
-            secondsAgo = 86400 * 90; // 90 days for daily candles
-            break;
-          default:
-            secondsAgo = 86400 * 7;
+        // Set current price from latest data point
+        if (chartData.length > 0) {
+          const latestPrice = chartData[chartData.length - 1].value;
+          console.log('Setting current price from chart:', latestPrice);
+          setCurrentPrice(latestPrice);
         }
-        
-        const from = now - secondsAgo;
 
-        console.log('Fetching historical data:', { 
-          timeframe, 
-          from, 
-          to: now,
-          fromDate: new Date(from * 1000).toISOString(),
-          toDate: new Date(now * 1000).toISOString(),
-          range: `${secondsAgo / 86400} days`
+        // Fit content to make sure chart is visible
+        if (chartRef.current) {
+          chartRef.current.timeScale().fitContent();
+        }
+
+        setLoading(false);
+      } else {
+        console.error('Invalid data structure or empty data', {
+          hasData: !!result.data,
+          isArray: Array.isArray(result.data),
+          length: result.data?.length,
         });
-
-        const response = await fetch(
-          `/api/stork/history?symbol=EURUSD&resolution=${timeframe}&from=${from}&to=${now}`
-        );
-        
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error('API error response:', errorText);
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        
-        const result = await response.json();
-        
-        console.log('Received data:', result);
-        
-        if (result.data && candlestickSeriesRef.current) {
-          const { t, o, h, l, c } = result.data;
-          
-          if (!t || !o || !h || !l || !c) {
-            console.error('Missing data fields:', { 
-              hasT: !!t, 
-              hasO: !!o, 
-              hasH: !!h, 
-              hasL: !!l, 
-              hasC: !!c,
-              result 
-            });
-            return;
-          }
-
-          if (t.length === 0) {
-            console.warn('No data points received - Stork might not have data for this time range or symbol');
-            console.warn('Try checking available assets at: /api/stork/assets');
-            return;
-          }
-          
-          const candlestickData = t.map((time: number, i: number) => ({
-            time: time, // Stork returns Unix timestamp in seconds
-            open: parseFloat(o[i]),
-            high: parseFloat(h[i]),
-            low: parseFloat(l[i]),
-            close: parseFloat(c[i]),
-          }));
-
-          console.log('Formatted candlestick data (first 3):', candlestickData.slice(0, 3));
-          console.log('Formatted candlestick data (last 3):', candlestickData.slice(-3));
-          console.log('Total data points:', candlestickData.length);
-
-          candlestickSeriesRef.current.setData(candlestickData);
-          
-          // Set current price from latest candle
-          if (c.length > 0) {
-            const latestPrice = parseFloat(c[c.length - 1]);
-            console.log('Setting current price from chart:', latestPrice);
-            setCurrentPrice(latestPrice);
-          }
-
-          // Fit content to make sure chart is visible
-          if (chartRef.current) {
-            chartRef.current.timeScale().fitContent();
-          }
-        } else {
-          console.error('Invalid data structure or series not ready', {
-            hasData: !!result.data,
-            hasSeries: !!candlestickSeriesRef.current,
-            resultKeys: result ? Object.keys(result) : 'no result'
-          });
-        }
-      } catch (error) {
-        console.error('Error fetching historical data:', error);
-      } finally {
         setLoading(false);
       }
-    };
+    } catch (error) {
+      console.error('Error fetching recent prices:', error);
+      setLoading(false);
+    }
+  };
 
-    fetchHistoricalData();
-  }, [timeframe]); // Re-fetch when timeframe changes
+  // Initial fetch and periodic updates
+  useEffect(() => {
+    fetchRecentPrices();
+    
+    // Update chart every 10 seconds
+    const chartInterval = setInterval(fetchRecentPrices, 10000);
+    
+    return () => clearInterval(chartInterval);
+  }, []);
 
-  // Update current price periodically
+  // Update current price more frequently
   useEffect(() => {
     const fetchLatestPrice = async () => {
       try {
@@ -219,8 +166,8 @@ export function TradingView({ onBack, usdcBalance }: TradingViewProps) {
       }
     };
 
-    const interval = setInterval(fetchLatestPrice, 5000); // Update every 5 seconds
-    return () => clearInterval(interval);
+    const priceInterval = setInterval(fetchLatestPrice, 5000); // Update every 5 seconds
+    return () => clearInterval(priceInterval);
   }, []);
 
   const handleTrade = () => {
@@ -267,24 +214,20 @@ export function TradingView({ onBack, usdcBalance }: TradingViewProps) {
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-slate-900">EUR/USD Perpetual</h1>
-            <p className="text-sm text-slate-600 mt-1">
-              Live Price: {currentPrice ? `$${currentPrice.toFixed(6)}` : 'Loading...'}
-            </p>
+            <h2 className="text-xl text-slate-800 mt-1">
+              Live Price: <b> {currentPrice ? `$${currentPrice.toFixed(6)}` : 'Loading...'} </b>
+            </h2>
           </div>
           <div className="flex items-center gap-4">
-            <a
-              href="/api/stork/assets"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs text-blue-600 hover:text-blue-800 underline"
-            >
-              View Available Assets
-            </a>
+            <div className="flex items-center gap-2 px-3 py-1 bg-emerald-50 rounded-lg border border-emerald-200">
+              <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
+              <span className="text-xs font-medium text-emerald-700">Live Data (Last 10min)</span>
+            </div>
             <button
               onClick={onBack}
               className="px-6 py-2 bg-slate-200 text-slate-900 font-semibold rounded-lg hover:bg-slate-300 transition"
             >
-              ← Back to Dashboard
+              ← Back to Wallet Dashboard
             </button>
           </div>
         </div>
@@ -296,59 +239,23 @@ export function TradingView({ onBack, usdcBalance }: TradingViewProps) {
             {/* Chart */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 relative">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-slate-900">EUR/USD Chart</h2>
-                <div className="flex gap-2 text-sm">
-                  <button
-                    onClick={() => setTimeframe('15')}
-                    className={`px-3 py-1 rounded transition ${
-                      timeframe === '15'
-                        ? 'bg-slate-900 text-white'
-                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                    }`}
-                  >
-                    15m
-                  </button>
-                  <button
-                    onClick={() => setTimeframe('60')}
-                    className={`px-3 py-1 rounded transition ${
-                      timeframe === '60'
-                        ? 'bg-slate-900 text-white'
-                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                    }`}
-                  >
-                    1h
-                  </button>
-                  <button
-                    onClick={() => setTimeframe('240')}
-                    className={`px-3 py-1 rounded transition ${
-                      timeframe === '240'
-                        ? 'bg-slate-900 text-white'
-                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                    }`}
-                  >
-                    4h
-                  </button>
-                  <button
-                    onClick={() => setTimeframe('D')}
-                    className={`px-3 py-1 rounded transition ${
-                      timeframe === 'D'
-                        ? 'bg-slate-900 text-white'
-                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                    }`}
-                  >
-                    1D
-                  </button>
+                <h2 className="text-lg font-semibold text-slate-900">EUR/USD Live Chart</h2>
+                <div className="text-sm text-slate-600">
+                  Real-time data via Stork Oracle
                 </div>
               </div>
               {loading && (
                 <div className="absolute inset-0 bg-white/80 flex items-center justify-center z-10 rounded-xl">
                   <div className="text-center">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-900 mx-auto mb-2"></div>
-                    <p className="text-sm text-slate-600">Loading chart...</p>
+                    <p className="text-sm text-slate-600">Loading live prices...</p>
                   </div>
                 </div>
               )}
               <div ref={chartContainerRef} className="min-h-[500px]" />
+              <p className="text-xs text-slate-500 mt-2 text-center">
+                Chart updates every 10 seconds with last 10 minutes of price data
+              </p>
             </div>
 
             {/* Positions */}
