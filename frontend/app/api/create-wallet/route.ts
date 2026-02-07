@@ -26,16 +26,16 @@ export async function POST() {
 
     const walletSetId = walletSetResponse.data.walletSet.id;
 
-    // Create EVM wallets (Arc + Base) with SAME address using refId
+    // Create EVM wallets (Arc + Base + Avax) with SAME address using refId
     // Using EOA (default) instead of SCA for Gateway compatibility
     const evmWalletsResponse = await client.createWallets({
-      blockchains: ['ARC-TESTNET', 'BASE-SEPOLIA'],
+      blockchains: ['ARC-TESTNET', 'BASE-SEPOLIA', 'AVAX-FUJI'],
       count: 1,
       walletSetId,
-      metadata: [{ refId: 'gateway-evm-wallet' }], // This ensures same address on both chains
+      metadata: [{ refId: 'gateway-evm-wallet' }], // This ensures same address on all chains
     });
 
-    if (!evmWalletsResponse.data?.wallets || evmWalletsResponse.data.wallets.length < 2) {
+    if (!evmWalletsResponse.data?.wallets || evmWalletsResponse.data.wallets.length < 3) {
       throw new Error('Failed to create EVM wallets on all networks');
     }
 
@@ -55,14 +55,15 @@ export async function POST() {
 
     const solanaWallet = solanaWalletsResponse.data.wallets[0];
 
-    // Both Arc and Base will have the SAME address (via refId)
+    // All EVM chains (Arc, Base, Avax) will have the SAME address (via refId)
     const sharedAddress = evmWallets[0].address;
     const arcWallet = evmWallets.find((w: any) => w.blockchain === 'ARC-TESTNET');
     const baseWallet = evmWallets.find((w: any) => w.blockchain === 'BASE-SEPOLIA');
+    const avaxWallet = evmWallets.find((w: any) => w.blockchain === 'AVAX-FUJI');
 
     return NextResponse.json({
       walletSetId,
-      sharedAddress, // Same address on Arc and Base
+      sharedAddress, // Same address on Arc, Base, and Avax
       wallets: {
         arc: {
           address: arcWallet?.address,
@@ -73,6 +74,11 @@ export async function POST() {
           address: baseWallet?.address,
           walletId: baseWallet?.id,
           blockchain: 'BASE-SEPOLIA',
+        },
+        avax: {
+          address: avaxWallet?.address,
+          walletId: avaxWallet?.id,
+          blockchain: 'AVAX-FUJI',
         },
         solana: {
           address: solanaWallet.address,

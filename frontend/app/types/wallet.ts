@@ -1,11 +1,12 @@
 export interface Wallet {
   address: string;
   walletId: string;
-  blockchain: 'ARC-TESTNET' | 'BASE-SEPOLIA' | 'SOL-DEVNET';
+  blockchain: 'ARC-TESTNET' | 'AVAX-FUJI' | 'BASE-SEPOLIA' | 'SOL-DEVNET';
 }
 
 export interface WalletData {
   arc: Wallet;
+  avax: Wallet;
   base: Wallet;
   solana: Wallet;
 }
@@ -21,5 +22,5 @@ export interface WalletMetadata {
   sharedAddress: string; // EVM shared address
 }
 
-export type SupportedChain = 'arc' | 'base' | 'solana';
+export type SupportedChain = 'arc' | 'avax' | 'base' | 'solana';
 export type SupportedAsset = 'USDC' | 'EURC';

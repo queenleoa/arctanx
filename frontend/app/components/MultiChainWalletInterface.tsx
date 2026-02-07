@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { createPublicClient, http, formatUnits } from 'viem';
-import { baseSepolia } from 'viem/chains';
+import { avalancheFuji, baseSepolia } from 'viem/chains';
 import { Connection, PublicKey } from '@solana/web3.js';
 import { TradingView } from './TradingView';
 
@@ -21,6 +21,7 @@ interface Wallet {
 
 interface WalletData {
   arc: Wallet;
+  avax: Wallet;
   base: Wallet;
   solana: Wallet;
 }
@@ -44,6 +45,10 @@ const TOKEN_ADDRESSES = {
     USDC: '0x3600000000000000000000000000000000000000',
     EURC: '0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a',
   },
+  'AVAX-FUJI': {
+    USDC: '0x5425890298aed601595a70AB815c96711a31Bc65',
+    EURC: '0x5E44db7996c682E92a960b65AC713a54AD815c6B',
+  },
   'BASE-SEPOLIA': {
     USDC: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
     EURC: '0x808456652fdb597867f38412077A9182bf77359F',
@@ -59,6 +64,7 @@ type DepositStep = 'idle' | 'approving' | 'depositing' | 'waiting-finality' | 'd
 export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress }: Props) {
   const [balances, setBalances] = useState({
     arc: { usdc: '0', eurc: '0' },
+    avax: { usdc: '0', eurc: '0' },
     base: { usdc: '0', eurc: '0' },
     solana: { usdc: '0', eurc: '0' },
   });
@@ -69,7 +75,7 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
   });
 
   const [activeTab, setActiveTab] = useState('fund');
-  const [selectedChain, setSelectedChain] = useState<'arc' | 'base'>('arc');
+  const [selectedChain, setSelectedChain] = useState<'arc' | 'avax' | 'base'>('arc');
   const [depositAmount, setDepositAmount] = useState('');
   const [depositStep, setDepositStep] = useState<DepositStep>('idle');
   const [depositError, setDepositError] = useState('');
@@ -78,6 +84,7 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
   const [showTrading, setShowTrading] = useState(false);
 
   const arcClient = createPublicClient({ chain: arcTestnet, transport: http() });
+  const avaxClient = createPublicClient({ chain: avalancheFuji, transport: http() });
   const baseClient = createPublicClient({ chain: baseSepolia, transport: http() });
   const solanaConnection = new Connection('https://api.devnet.solana.com');
 
@@ -99,6 +106,29 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
         }) as bigint;
       } catch {}
 
+      // Avax USDC (6 decimals)
+      let avaxUsdcBal = BigInt(0);
+      try {
+        avaxUsdcBal = await avaxClient.readContract({
+          address: TOKEN_ADDRESSES['AVAX-FUJI'].USDC as `0x${string}`,
+          abi: ERC20_ABI,
+          functionName: 'balanceOf',
+          args: [sharedAddress as `0x${string}`],
+        }) as bigint;
+      } catch {}
+
+      // Avax EURC (6 decimals)
+      let avaxEurcBal = BigInt(0);
+      try {
+        avaxEurcBal = await avaxClient.readContract({
+          address: TOKEN_ADDRESSES['AVAX-FUJI'].EURC as `0x${string}`,
+          abi: ERC20_ABI,
+          functionName: 'balanceOf',
+          args: [sharedAddress as `0x${string}`],
+        }) as bigint;
+      } catch {}
+
+      // Base USDC (6 decimals)
       let baseUsdcBal = BigInt(0);
       try {
         baseUsdcBal = await baseClient.readContract({
@@ -109,6 +139,7 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
         }) as bigint;
       } catch {}
 
+      // Base EURC (6 decimals)
       let baseEurcBal = BigInt(0);
       try {
         baseEurcBal = await baseClient.readContract({
@@ -119,6 +150,7 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
         }) as bigint;
       } catch {}
 
+      // Solana USDC
       let solUsdcBal = '0';
       try {
         const pk = new PublicKey(wallets.solana.address);
@@ -130,6 +162,7 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
         }
       } catch {}
 
+      // Solana EURC
       let solEurcBal = '0';
       try {
         const pk = new PublicKey(wallets.solana.address);
@@ -143,6 +176,7 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
 
       setBalances({
         arc:    { usdc: formatUnits(arcUsdcBal, 18),   eurc: formatUnits(arcEurcBal, 6) },
+        avax:   { usdc: formatUnits(avaxUsdcBal, 6),   eurc: formatUnits(avaxEurcBal, 6) },
         base:   { usdc: formatUnits(baseUsdcBal, 6),   eurc: formatUnits(baseEurcBal, 6) },
         solana: { usdc: solUsdcBal,                     eurc: solEurcBal },
       });
@@ -184,8 +218,8 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
     return () => clearInterval(id);
   }, [fetchBalances, fetchGatewayBalance]);
 
-  const totalUSDC  = parseFloat(balances.arc.usdc) + parseFloat(balances.base.usdc) + parseFloat(balances.solana.usdc);
-  const totalEURC  = parseFloat(balances.arc.eurc) + parseFloat(balances.base.eurc) + parseFloat(balances.solana.eurc);
+  const totalUSDC  = parseFloat(balances.arc.usdc) + parseFloat(balances.avax.usdc) + parseFloat(balances.base.usdc) + parseFloat(balances.solana.usdc);
+  const totalEURC  = parseFloat(balances.arc.eurc) + parseFloat(balances.avax.eurc) + parseFloat(balances.base.eurc) + parseFloat(balances.solana.eurc);
   const gwTotal    = parseFloat(gatewayBalance.totalUsdc);
 
   // ── Faucet ──────────────────────────────────────────────────────────
@@ -224,8 +258,15 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
     setDepositError('');
     setDepositResult(null);
 
-    const blockchain = selectedChain === 'arc' ? 'ARC-TESTNET' : 'BASE-SEPOLIA';
-    const walletId   = selectedChain === 'arc' ? wallets.arc.walletId : wallets.base.walletId;
+    const blockchainMap = {
+      arc: 'ARC-TESTNET',
+      avax: 'AVAX-FUJI',
+      base: 'BASE-SEPOLIA',
+    };
+    const blockchain = blockchainMap[selectedChain];
+    const walletId   = selectedChain === 'arc' ? wallets.arc.walletId : 
+                       selectedChain === 'avax' ? wallets.avax.walletId :
+                       wallets.base.walletId;
 
     try {
       const res = await fetch('/api/gateway-deposit', {
@@ -269,13 +310,16 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
     alert(name + ' address copied!');
   };
 
-  const chainAvailable = (chain: 'arc' | 'base') => {
-    const bal = chain === 'arc' ? balances.arc.usdc : balances.base.usdc;
+  const chainAvailable = (chain: 'arc' | 'avax' | 'base') => {
+    const bal = chain === 'arc' ? balances.arc.usdc : 
+                chain === 'avax' ? balances.avax.usdc :
+                balances.base.usdc;
     return parseFloat(bal) > 0;
   };
 
   const explorerLink = (chain: string, txHash: string) => {
     if (chain === 'arc') return `https://arc-testnet.explorer.circle.com/tx/${txHash}`;
+    if (chain === 'avax') return `https://testnet.snowtrace.io/tx/${txHash}`;
     return `https://sepolia.basescan.org/tx/${txHash}`;
   };
 
@@ -313,6 +357,7 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
             {gwTotal > 0 ? (
               <div className="mt-2 flex gap-3 text-xs text-slate-500">
                 {gatewayBalance.perChain.arc && <span>Arc: ${parseFloat(gatewayBalance.perChain.arc).toFixed(2)}</span>}
+                {gatewayBalance.perChain.avax && <span>Avax: ${parseFloat(gatewayBalance.perChain.avax).toFixed(2)}</span>}
                 {gatewayBalance.perChain.base && <span>Base: ${parseFloat(gatewayBalance.perChain.base).toFixed(2)}</span>}
                 {gatewayBalance.perChain.solana && <span>Sol: ${parseFloat(gatewayBalance.perChain.solana).toFixed(2)}</span>}
               </div>
@@ -328,7 +373,7 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
             <div className="flex-1">
               <p className="text-xs font-semibold text-emerald-800 uppercase mb-1">EVM Address</p>
               <p className="font-mono text-sm text-slate-900 break-all">{sharedAddress}</p>
-              <p className="text-xs text-emerald-700 mt-2">Same on Arc and Base</p>
+              <p className="text-xs text-emerald-700 mt-2">Same on Arc, Avalanche, and Base</p>
             </div>
             <button onClick={() => copyAddr(sharedAddress, 'EVM')} className="p-2 hover:bg-emerald-100 rounded">
               <svg className="w-5 h-5 text-emerald-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
@@ -348,9 +393,10 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
         </div>
 
         {/* Per-chain balances */}
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-4 gap-4">
           {[
             { label: 'Arc Testnet', icon: '🌐', chain: 'arc' as const },
+            { label: 'Avalanche Fuji', icon: '🔺', chain: 'avax' as const },
             { label: 'Base Sepolia', icon: '🔵', chain: 'base' as const },
             { label: 'Solana Devnet', icon: '◎', chain: 'solana' as const },
           ].map(({ label, icon, chain }) => (
@@ -400,9 +446,10 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
             <div className="space-y-6">
               <div className="bg-slate-50 rounded-lg p-6 border border-slate-200">
                 <h3 className="font-semibold text-slate-900 mb-4">Fund Wallets via API</h3>
-                <div className="grid grid-cols-3 gap-4 mb-6">
+                <div className="grid grid-cols-4 gap-4 mb-6">
                   {[
                     { bc: 'ARC-TESTNET',   addr: sharedAddress,        color: 'emerald', label: 'Fund Arc Testnet',   sub: 'USDC (native) + EURC' },
+                    { bc: 'AVAX-FUJI',     addr: sharedAddress,        color: 'red',     label: 'Fund Avalanche Fuji', sub: 'USDC + EURC' },
                     { bc: 'BASE-SEPOLIA',  addr: sharedAddress,        color: 'blue',    label: 'Fund Base Sepolia',  sub: 'Native + USDC + EURC' },
                     { bc: 'SOL-DEVNET',    addr: wallets.solana.address, color: 'purple',  label: 'Fund Solana Devnet', sub: 'Native + USDC + EURC' },
                   ].map(({ bc, addr, color, label, sub }) => (
@@ -422,15 +469,18 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
 
                 <div className="border-t border-slate-300 pt-4">
                   <p className="text-xs text-slate-600 mb-3 font-medium">Or use manual faucet links (if rate-limited):</p>
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-4 gap-3">
                     <a href={'https://faucet.circle.com/?address=' + sharedAddress + '&chain=ARC'} target="_blank" rel="noopener noreferrer" className="text-xs text-center bg-white border border-slate-300 rounded-lg py-2 px-3 hover:border-emerald-600 hover:bg-emerald-50 transition">
-                      USDC &amp; EURC Faucet ↗
+                      Arc USDC Faucet ↗
+                    </a>
+                    <a href="https://faucet.avax.network/" target="_blank" rel="noopener noreferrer" className="text-xs text-center bg-white border border-slate-300 rounded-lg py-2 px-3 hover:border-red-600 hover:bg-red-50 transition">
+                      Avax Native Faucet ↗
                     </a>
                     <a href="https://www.alchemy.com/faucets/base-sepolia" target="_blank" rel="noopener noreferrer" className="text-xs text-center bg-white border border-slate-300 rounded-lg py-2 px-3 hover:border-blue-600 hover:bg-blue-50 transition">
-                      Native Faucet for Base ↗
+                      Base Native Faucet ↗
                     </a>
                     <a href={'https://faucet.solana.com/?address=' + wallets.solana.address} target="_blank" rel="noopener noreferrer" className="text-xs text-center bg-white border border-slate-300 rounded-lg py-2 px-3 hover:border-purple-600 hover:bg-purple-50 transition">
-                      Native Faucet for Solana ↗
+                      Sol Native Faucet ↗
                     </a>
                   </div>
                 </div>
@@ -447,7 +497,7 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
                   <div>
                     <h3 className="font-bold text-slate-900 mb-1">Circle Gateway Unified Balance</h3>
                     <p className="text-sm text-slate-700">
-                      Deposit USDC from Arc or Base into the Gateway Wallet contract. Once finalized, the balance is unified and accessible on any supported chain.
+                      Deposit USDC from Arc, Avax, or Base into the Gateway Wallet contract. Once finalized, the balance is unified and accessible on any supported chain.
                     </p>
                   </div>
                   <div className="text-right min-w-[140px]">
@@ -457,10 +507,14 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
                   </div>
                 </div>
                 {gwTotal > 0 && (
-                  <div className="mt-3 pt-3 border-t border-emerald-200 grid grid-cols-3 gap-4 text-sm">
+                  <div className="mt-3 pt-3 border-t border-emerald-200 grid grid-cols-4 gap-4 text-sm">
                     <div>
                       <span className="text-slate-500">Arc:</span>{' '}
                       <span className="font-semibold">${parseFloat(gatewayBalance.perChain.arc || '0').toFixed(2)}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500">Avax:</span>{' '}
+                      <span className="font-semibold">${parseFloat(gatewayBalance.perChain.avax || '0').toFixed(2)}</span>
                     </div>
                     <div>
                       <span className="text-slate-500">Base:</span>{' '}
@@ -482,8 +536,8 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
                   <form onSubmit={handleGatewayDeposit} className="space-y-4">
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-2">Source Chain</label>
-                      <div className="grid grid-cols-2 gap-3">
-                        {(['arc', 'base'] as const).map((c) => (
+                      <div className="grid grid-cols-3 gap-3">
+                        {(['arc', 'avax', 'base'] as const).map((c) => (
                           <button
                             key={c}
                             type="button"
@@ -496,7 +550,7 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
                             }
                           >
                             <p className="font-semibold text-slate-900 text-sm">
-                              {c === 'arc' ? '🌐 Arc Testnet' : '🔵 Base Sepolia'}
+                              {c === 'arc' ? '🌐 Arc Testnet' : c === 'avax' ? '🔺 Avalanche Fuji' : '🔵 Base Sepolia'}
                             </p>
                             <p className="text-xs text-slate-500 mt-1">
                               Available: ${parseFloat(balances[c].usdc).toFixed(2)} USDC
@@ -524,7 +578,9 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
                         <button
                           type="button"
                           onClick={() => {
-                            const bal = selectedChain === 'arc' ? balances.arc.usdc : balances.base.usdc;
+                            const bal = selectedChain === 'arc' ? balances.arc.usdc : 
+                                        selectedChain === 'avax' ? balances.avax.usdc :
+                                        balances.base.usdc;
                             // Leave a small buffer for gas (not needed on Arc since USDC is native but safe)
                             const max = Math.max(0, parseFloat(bal) - 0.01);
                             setDepositAmount(max.toFixed(2));

@@ -8,6 +8,7 @@ import { MultiChainWalletInterface } from '@/app/components/MultiChainWalletInte
 interface WalletData {
   arc: { address: string; walletId: string; blockchain: string };
   base: { address: string; walletId: string; blockchain: string };
+  avax: { address: string; walletId: string; blockchain: string };
   solana: { address: string; walletId: string; blockchain: string };
 }
 

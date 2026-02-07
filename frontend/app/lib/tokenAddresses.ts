@@ -5,26 +5,32 @@ export const TOKEN_ADDRESSES = {
     // Arc Testnet uses native USDC (no contract address needed for balance)
     // USDC is the native gas token on Arc
     USDC: '0x3600000000000000000000000000000000000000', // Special case - use getBalance
-    EURC: '0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a', // Add EURC contract address if available
+    EURC: '0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a',
+  },
+  'AVAX-FUJI': {
+    USDC: '0x5425890298aed601595a70AB815c96711a31Bc65', // Avalanche Fuji USDC
+    EURC: '0x5E44db7996c682E92a960b65AC713a54AD815c6B', 
   },
   'BASE-SEPOLIA': {
     USDC: '0x036CbD53842c5426634e7929541eC2318f3dCF7e', // Base Sepolia USDC
-    EURC: '0x808456652fdb597867f38412077A9182bf77359F', // Add EURC contract address if available
+    EURC: '0x808456652fdb597867f38412077A9182bf77359F',
   },
   'SOL-DEVNET': {
     USDC: '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU', // Solana Devnet USDC mint
-    EURC: 'HzwqbKZw8HxMN6bF2yFZNrht3c2iXXzpKcFu7uBEDKtr', // Add EURC mint address if available
+    EURC: 'HzwqbKZw8HxMN6bF2yFZNrht3c2iXXzpKcFu7uBEDKtr',
   },
 } as const;
 
 export const USDC_DECIMALS = {
   'ARC-TESTNET': 18, // Arc uses 18 decimals for native USDC
+  'AVAX-FUJI': 6, // Standard USDC decimals
   'BASE-SEPOLIA': 6, // Standard USDC decimals
   'SOL-DEVNET': 6, // Standard USDC decimals
 } as const;
 
 export const EURC_DECIMALS = {
   'ARC-TESTNET': 6,
+  'AVAX-FUJI': 6,
   'BASE-SEPOLIA': 6,
   'SOL-DEVNET': 6,
 } as const;

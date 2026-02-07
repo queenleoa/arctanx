@@ -10,10 +10,12 @@ export async function POST(request: Request) {
 
     // Determine which tokens to fund based on blockchain
     // Arc Testnet: native currency IS USDC, so only request native + EURC
+    // Avax Fuji: request all three (native AVAX, USDC, EURC)
     // Base Sepolia: request all three (native ETH, USDC, EURC)
     // Solana Devnet: request all three (native SOL, USDC, EURC)
     const fundingConfig: Record<string, { native: boolean; usdc: boolean; eurc: boolean }> = {
       'ARC-TESTNET': { native: false, usdc: true, eurc: true }, // native IS USDC
+      'AVAX-FUJI': { native: true, usdc: true, eurc: true },
       'BASE-SEPOLIA': { native: true, usdc: true, eurc: true },
       'SOL-DEVNET': { native: true, usdc: true, eurc: true },
     };

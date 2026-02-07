@@ -112,7 +112,7 @@ export function LandingPage({ onGetStarted }: LandingPageProps) {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
             <div>
               <p className="text-slate-400 mb-2 text-sm">Test Networks</p>
-              <p className="font-semibold text-lg">Arc · Base · Solana</p>
+              <p className="font-semibold text-lg">Arc · Avax · Base · Solana</p>
             </div>
             <div>
               <p className="text-slate-400 mb-2 text-sm">Demo Assets</p>
@@ -132,7 +132,7 @@ export function LandingPage({ onGetStarted }: LandingPageProps) {
         {/* Footer */}
         <div className="mt-16 pt-8 border-t border-slate-200 text-center">
           <p className="text-sm text-slate-500">
-            Built for EthGlobal HackMoney 2026 · Powered by Circle Wallets, Circle Gateway, Arc Testnet, Base Sepolia, & Solana Devnet
+            Built for EthGlobal HackMoney 2026 · Powered by Circle Wallets, Circle Gateway, Arc Testnet, Avalanche Fuji, Base Sepolia, & Solana Devnet
           </p>
         </div>
       </div>

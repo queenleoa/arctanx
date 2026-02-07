@@ -6,6 +6,7 @@ const GATEWAY_API = 'https://gateway-api-testnet.circle.com/v1';
 // Domain IDs for Gateway
 const DOMAINS: Record<string, number> = {
   'ARC-TESTNET': 26,
+  'AVAX-FUJI': 1,
   'BASE-SEPOLIA': 6,
   'SOL-DEVNET': 5,
 };
@@ -26,6 +27,7 @@ export async function POST(request: Request) {
     // Build sources array – EVM chains share one address, Solana has its own
     const sources: Array<{ domain: number; depositor: string }> = [
       { domain: DOMAINS['ARC-TESTNET'], depositor: evmAddress },
+      { domain: DOMAINS['AVAX-FUJI'], depositor: evmAddress },
       { domain: DOMAINS['BASE-SEPOLIA'], depositor: evmAddress },
     ];
 
@@ -58,6 +60,7 @@ export async function POST(request: Request) {
       // Map domain back to chain name
       const domain = b.source?.domain ?? b.domain;
       if (domain === DOMAINS['ARC-TESTNET']) perChain['arc'] = amount.toFixed(6);
+      else if (domain === DOMAINS['AVAX-FUJI']) perChain['avax'] = amount.toFixed(6);
       else if (domain === DOMAINS['BASE-SEPOLIA']) perChain['base'] = amount.toFixed(6);
       else if (domain === DOMAINS['SOL-DEVNET']) perChain['solana'] = amount.toFixed(6);
     }
