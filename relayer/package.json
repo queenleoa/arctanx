@@ -3,12 +3,12 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "start": "node relayer.js",
-    "start:ts": "tsx relayer-simple.ts"
+    "start": "node relayer.js"
   },
   "dependencies": {
-    "ethers": "^6.13.0",
-    "dotenv": "^16.4.5"
+    "axios": "^1.13.5",
+    "dotenv": "^16.4.5",
+    "ethers": "^6.13.0"
   },
   "devDependencies": {
     "tsx": "^4.7.1",

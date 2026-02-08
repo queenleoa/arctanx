@@ -1,47 +1,73 @@
 #!/bin/bash
 set -e
 
-echo "🧪 Testing Position Opening"
-echo "==========================="
+echo "🧪 Testing Position Opening on Arc Testnet"
+echo "==========================================="
 echo ""
 
 # Load environment
+if [ ! -f .env ]; then
+    echo "❌ .env file not found!"
+    echo "Create .env with:"
+    echo "  ARC_TESTNET_RPC=https://testnet-rpc.arc.network"
+    echo "  PRIVATE_KEY=0x..."
+    echo "  PERPS_DEX_ADDRESS=0x..."
+    exit 1
+fi
+
 source .env
 
-PERPS_DEX="0x44715A5E894485BDc949ADB325a2Bb309686e3bb"
+# Contract addresses
+PERPS_DEX="${PERPS_DEX_ADDRESS}"
 ARC_USDC="0x3600000000000000000000000000000000000000"
 YOUR_ADDRESS=$(cast wallet address $PRIVATE_KEY)
 
-echo "Your address: $YOUR_ADDRESS"
+echo "📋 Configuration"
+echo "----------------"
+echo "Your address:  $YOUR_ADDRESS"
+echo "PerpsDEX:      $PERPS_DEX"
+echo "Arc USDC:      $ARC_USDC"
 echo ""
 
-# Check balance
+# CRITICAL: Arc USDC uses 6 decimals for ERC-20 interface!
+# Native balance shows 18 decimals, but approve/transferFrom use 6
+AMOUNT_1_USDC="1000000"  # 1 USDC = 1,000,000 with 6 decimals
+
 echo "1️⃣ Checking USDC balance..."
 BALANCE=$(cast call $ARC_USDC "balanceOf(address)" $YOUR_ADDRESS --rpc-url $ARC_TESTNET_RPC)
-echo "   Balance: $BALANCE"
+BALANCE_DEC=$((16#${BALANCE:2}))
+BALANCE_HUMAN=$(echo "scale=6; $BALANCE_DEC / 1000000" | bc)
+echo "   Balance: $BALANCE_HUMAN USDC"
 
 if [ "$BALANCE" == "0x0000000000000000000000000000000000000000000000000000000000000000" ]; then
-    echo "   ❌ No USDC! Get testnet USDC first."
+    echo ""
+    echo "❌ No USDC! Get testnet USDC:"
+    echo "   👉 https://faucet.circle.com"
+    echo "   Select 'Arc Testnet' and request USDC"
     exit 1
 fi
 echo ""
 
-# Check allowance
 echo "2️⃣ Checking current allowance..."
 ALLOWANCE=$(cast call $ARC_USDC "allowance(address,address)" $YOUR_ADDRESS $PERPS_DEX --rpc-url $ARC_TESTNET_RPC)
 echo "   Allowance: $ALLOWANCE"
 echo ""
 
-# Approve if needed (just 1 USDC)
+# Approve if needed
 if [ "$ALLOWANCE" == "0x0000000000000000000000000000000000000000000000000000000000000000" ]; then
-    echo "3️⃣ Approving 1 USDC..."
+    echo "3️⃣ Approving 10 USDC (using 6 decimals)..."
+    echo "   Amount: 10000000 (10 USDC with 6 decimals)"
+    
     cast send $ARC_USDC \
         "approve(address,uint256)" \
         $PERPS_DEX \
-        1000000000000000000 \
+        10000000 \
         --rpc-url $ARC_TESTNET_RPC \
         --private-key $PRIVATE_KEY \
-        --legacy
+        --legacy \
+        --gas-limit 100000
+    
+    echo "   ✅ Approved"
     echo ""
     sleep 3
 else
@@ -49,9 +75,9 @@ else
     echo ""
 fi
 
-# Open position (1 USDC margin)
+# Open position with correct 6 decimal amounts
 echo "4️⃣ Opening position..."
-echo "   Margin: 1 USDC"
+echo "   Margin: 1 USDC (1000000 with 6 decimals)"
 echo "   Leverage: 5x"
 echo "   EUR/USD: 1.05"
 echo "   Direction: LONG"
@@ -60,16 +86,31 @@ echo ""
 TX=$(cast send $PERPS_DEX \
     "openPosition(address,uint256,uint256,uint256,bool)" \
     $ARC_USDC \
-    1000000000000000000 \
+    $AMOUNT_1_USDC \
     5 \
     1050000000000000000 \
     true \
     --rpc-url $ARC_TESTNET_RPC \
     --private-key $PRIVATE_KEY \
     --legacy \
+    --gas-limit 500000 \
     --json | jq -r '.transactionHash')
 
-echo "   ✅ Transaction: $TX"
+echo "✅ Transaction submitted!"
 echo ""
+echo "📍 Tx Hash: $TX"
+echo "🔍 Explorer: https://testnet.arcscan.app/tx/$TX"
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "👀 Watch the relayer terminal!"
-echo "   It will process this in ~30 seconds"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+echo "The relayer will:"
+echo "  1. Detect PositionOpened event (~10s)"
+echo "  2. Wait for Arc finality (10s)"
+echo "  3. Fetch CCTP attestation from Circle (30-60s)"
+echo "  4. Relay message to Arbitrum Sepolia"
+echo "  5. Record deposit in MarginVault"
+echo ""
+echo "Expected total time: 1-2 minutes"
+echo ""
