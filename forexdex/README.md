@@ -1,66 +1,48 @@
-## Foundry
+Deployment
+----------
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+### Prerequisites
 
-Foundry consists of:
+bash
 
-- **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
-- **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
-- **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
-- **Chisel**: Fast, utilitarian, and verbose solidity REPL.
-
-## Documentation
-
-https://book.getfoundry.sh/
-
-## Usage
-
-### Build
-
-```shell
-$ forge build
+```
+forge install OpenZeppelin/openzeppelin-contracts 
 ```
 
-### Test
+### Step 1: Deploy MarginVault on Arb Sepolia
 
-```shell
-$ forge test
+bash
+
+```
+# Use a placeholder PerpsDEX address first (we'll update it)
+PERPS_DEX_ADDRESS=0x0000000000000000000000000000000000000001\
+forge script script/Deploy.s.sol:DeployMarginVault\
+  --rpc-url https://sepolia-rollup.arbitrum.io/rpc\
+  --private-key $PRIVATE_KEY\
+  --broadcast
 ```
 
-### Format
+### Step 2: Deploy PerpsDEX on Arc Testnet
 
-```shell
-$ forge fmt
+bash
+
+```
+MARGIN_VAULT_ADDRESS=<from step 1>\
+forge script script/Deploy.s.sol:DeployPerpsDEX\
+  --rpc-url $ARC_TESTNET_RPC\
+  --private-key $PRIVATE_KEY\
+  --broadcast
 ```
 
-### Gas Snapshots
+### Step 3: Link contracts
 
-```shell
-$ forge snapshot
+bash
+
 ```
-
-### Anvil
-
-```shell
-$ anvil
-```
-
-### Deploy
-
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
-```
-
-### Cast
-
-```shell
-$ cast <subcommand>
-```
-
-### Help
-
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
+MARGIN_VAULT_ADDRESS=<from step 1>\
+PERPS_DEX_ADDRESS=<from step 2>\
+forge script script/Deploy.s.sol:LinkContracts\
+  --rpc-url https://sepolia-rollup.arbitrum.io/rpc\
+  --private-key $PRIVATE_KEY\
+  --broadcast
 ```
