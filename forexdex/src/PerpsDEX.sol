@@ -18,16 +18,18 @@ interface ITokenMessenger {
 /// @title PerpsDEX - POC Perpetual Futures DEX with Cross-Chain Margin Rehypothecation
 /// @notice Deployed on Arc testnet (CCTP domain 26).
 ///         Margin sent via CCTP to MarginVault on Arbitrum Sepolia (domain 3).
-/// @dev Arc USDC = 18 decimals (native gas wrapper), Arc EURC = 6 decimals.
-///      CCTP TokenMinter handles decimal scaling at burn/mint boundaries.
-///      All position accounting uses Arc-native token decimals.
+/// @dev Arc USDC ERC-20 interface = 6 decimals, Arc EURC = 6 decimals.
+///      CCTP TokenMinter handles decimal scaling automatically at burn/mint boundaries.
+///      All position accounting uses ERC-20 decimals (6 decimals for both USDC and EURC).
 contract PerpsDEX is Ownable {
     using SafeERC20 for IERC20;
 
     // ─── Arc Testnet Constants ───────────────────────────────────────────
-    address public constant ARC_USDC  = 0x3600000000000000000000000000000000000000; // 18 dec
+    // Note: Arc native USDC balance has 18 decimal precision, but ERC-20 interface uses 6
+    address public constant ARC_USDC  = 0x3600000000000000000000000000000000000000; // 6 dec (ERC-20)
     address public constant ARC_EURC  = 0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a; // 6 dec
 
+    // CCTP V2 contracts (CREATE2 deployed at same address across all chains)
     address public constant TOKEN_MESSENGER      = 0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA;
     address public constant MESSAGE_TRANSMITTER  = 0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275;
 
@@ -40,7 +42,7 @@ contract PerpsDEX is Ownable {
     struct Position {
         address trader;
         address marginToken;        // ARC_USDC or ARC_EURC
-        uint256 margin;             // deposited margin (Arc-native decimals)
+        uint256 margin;             // deposited margin (6 decimals for both USDC/EURC)
         uint256 virtualMargin;      // margin minus accrued funding
         uint256 leverage;           // 1-100x
         uint256 entryPrice;         // EUR/USD scaled 1e18
@@ -115,8 +117,11 @@ contract PerpsDEX is Ownable {
         // Pull margin from trader
         IERC20(marginToken).safeTransferFrom(msg.sender, address(this), marginAmount);
 
-        // Approve CCTP and burn → mints on Arb Sepolia to MarginVault
-        IERC20(marginToken).approve(TOKEN_MESSENGER, marginAmount);
+        // Approve CCTP (use forceApprove for Arc USDC compatibility)
+        // Arc USDC requires clearing previous allowance before setting new one
+        IERC20(marginToken).forceApprove(TOKEN_MESSENGER, marginAmount);
+        
+        // Burn → mints on Arb Sepolia to MarginVault
         uint64 cctpNonce = ITokenMessenger(TOKEN_MESSENGER).depositForBurn(
             marginAmount,
             ARB_SEPOLIA_DOMAIN,
@@ -169,7 +174,7 @@ contract PerpsDEX is Ownable {
     // ═════════════════════════════════════════════════════════════════════
     function settlePosition(
         uint256 positionId,
-        uint256 returnedAmount          // tokens actually received back
+        uint256 returnedAmount          // tokens actually received back (6 decimals)
     ) external onlyOwner {
         Position storage pos = positions[positionId];
         require(pos.status == Status.PendingClose, "Not pending");
