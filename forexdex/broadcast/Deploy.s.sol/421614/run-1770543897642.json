@@ -1,0 +1,52 @@
+{
+  "transactions": [
+    {
+      "hash": "0x99ac67f079e2dee9177daa0f724501917cc016da7a05a7a57804b01604e7421e",
+      "transactionType": "CALL",
+      "contractName": null,
+      "contractAddress": "0x5095afa7ed6f3782994b325eb113136d352f826f",
+      "function": "setPerpsDex(address)",
+      "arguments": [
+        "0x5095AFa7eD6f3782994B325eb113136d352F826F"
+      ],
+      "transaction": {
+        "from": "0xfccc2f3c5dae384049aeaf1a1bcf1a39845aee52",
+        "to": "0x5095afa7ed6f3782994b325eb113136d352f826f",
+        "gas": "0xa7f9",
+        "value": "0x0",
+        "input": "0xa7c0ad000000000000000000000000005095afa7ed6f3782994b325eb113136d352f826f",
+        "nonce": "0x1",
+        "chainId": "0x66eee"
+      },
+      "additionalContracts": [],
+      "isFixedGasLimit": false
+    }
+  ],
+  "receipts": [
+    {
+      "status": "0x1",
+      "cumulativeGasUsed": "0x7ca7",
+      "logs": [],
+      "logsBloom": "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "type": "0x2",
+      "transactionHash": "0x99ac67f079e2dee9177daa0f724501917cc016da7a05a7a57804b01604e7421e",
+      "transactionIndex": "0x1",
+      "blockHash": "0xf1710e7ba861be5b35c724bbc49b47d557590406d1c1e5c14f4141fdc686e82a",
+      "blockNumber": "0xe5aa512",
+      "gasUsed": "0x7ca7",
+      "effectiveGasPrice": "0x1312d00",
+      "from": "0xfccc2f3c5dae384049aeaf1a1bcf1a39845aee52",
+      "to": "0x5095afa7ed6f3782994b325eb113136d352f826f",
+      "contractAddress": null,
+      "gasUsedForL1": "0xb7c",
+      "l1BlockNumber": "0x9be4d8",
+      "timeboosted": false
+    }
+  ],
+  "libraries": [],
+  "pending": [],
+  "returns": {},
+  "timestamp": 1770543897642,
+  "chain": 421614,
+  "commit": "0962be8"
+}

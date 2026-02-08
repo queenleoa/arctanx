@@ -1,3 +1,9 @@
 [submodule "contracts/lib/forge-std"]
 	path = contracts/lib/forge-std
 	url = https://github.com/foundry-rs/forge-std
+[submodule "forexdex/lib/forge-std"]
+	path = forexdex/lib/forge-std
+	url = https://github.com/foundry-rs/forge-std
+[submodule "forexdex/lib/openzeppelin-contracts"]
+	path = forexdex/lib/openzeppelin-contracts
+	url = https://github.com/OpenZeppelin/openzeppelin-contracts
