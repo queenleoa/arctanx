@@ -59,7 +59,47 @@ const TOKEN_ADDRESSES = {
   },
 };
 
+// Gateway Wallet contract address (same on all EVM testnets)
+const GATEWAY_WALLET_ADDRESS = '0x0077777d7EBA4688BDeF3E311b846F25870A19B9';
+
 type DepositStep = 'idle' | 'approving' | 'depositing' | 'waiting-finality' | 'done' | 'error';
+
+// ── Explorer URL helpers ──────────────────────────────────────────────
+function addressExplorerUrl(chain: string, address: string): string {
+  switch (chain) {
+    case 'arc':
+      return `https://testnet.arcscan.app/address/${address}?tab=token_transfers`;
+    case 'avax':
+      return `https://testnet.snowtrace.io/address/${address}`;
+    case 'base':
+      return `https://sepolia.basescan.org/address/${address}`;
+    case 'solana':
+      return `https://explorer.solana.com/address/${address}?cluster=devnet`;
+    default:
+      return '#';
+  }
+}
+
+function txExplorerUrl(chain: string, txHash: string): string {
+  switch (chain) {
+    case 'arc':
+      return `https://testnet.arcscan.app/tx/${txHash}`;
+    case 'avax':
+      return `https://testnet.snowtrace.io/tx/${txHash}`;
+    case 'base':
+      return `https://sepolia.basescan.org/tx/${txHash}`;
+    default:
+      return '#';
+  }
+}
+
+function ExplorerIcon({ className = 'w-4 h-4' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+    </svg>
+  );
+}
 
 export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress }: Props) {
   const [balances, setBalances] = useState({
@@ -288,7 +328,6 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
       setDepositStep('waiting-finality');
       setDepositAmount('');
 
-      // Refresh balances after a short delay, then again after finality window
       setTimeout(() => { fetchBalances(); fetchGatewayBalance(); }, 5_000);
       setTimeout(() => { fetchGatewayBalance(); }, 30_000);
       setTimeout(() => { fetchGatewayBalance(); setDepositStep('done'); }, 60_000);
@@ -317,21 +356,18 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
     return parseFloat(bal) > 0;
   };
 
-  const explorerLink = (chain: string, txHash: string) => {
-    if (chain === 'arc') return `https://arc-testnet.explorer.circle.com/tx/${txHash}`;
-    if (chain === 'avax') return `https://testnet.snowtrace.io/tx/${txHash}`;
-    return `https://sepolia.basescan.org/tx/${txHash}`;
-  };
-
   // ── Trading redirect ───────────────────────────────────────────────
   if (showTrading) {
     return (
       <TradingView 
         onBack={() => setShowTrading(false)} 
-        usdcBalance={totalUSDC}
-        eurcBalance={totalEURC}
+        arcUsdcBalance={parseFloat(balances.arc.usdc)}
+        arcEurcBalance={parseFloat(balances.arc.eurc)}
+        gatewayUsdcBalance={gwTotal}
+        gatewayPerChain={gatewayBalance.perChain}
         walletAddress={sharedAddress}
         arcWalletId={wallets.arc.walletId}
+        solanaAddress={wallets.solana.address}
         onRefreshBalances={() => {
           fetchBalances();
           fetchGatewayBalance();
@@ -363,7 +399,18 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
           </div>
 
           <div className="border-l border-slate-200 pl-8">
-            <p className="text-sm font-medium text-emerald-600 mb-1">Gateway Unified Balance</p>
+            <div className="flex items-center gap-2 mb-1">
+              <p className="text-sm font-medium text-emerald-600">Gateway Unified Balance</p>
+              <a
+                href={addressExplorerUrl('arc', GATEWAY_WALLET_ADDRESS)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-emerald-500 hover:text-emerald-700"
+                title="View Gateway contract on explorer"
+              >
+                <ExplorerIcon className="w-3.5 h-3.5" />
+              </a>
+            </div>
             <p className="text-4xl font-bold text-slate-900">${gwTotal.toFixed(2)}</p>
             <p className="text-sm text-slate-500 mt-1">USDC</p>
             {gwTotal > 0 ? (
@@ -387,9 +434,20 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
               <p className="font-mono text-sm text-slate-900 break-all">{sharedAddress}</p>
               <p className="text-xs text-emerald-700 mt-2">Same on Arc, Avalanche, and Base</p>
             </div>
-            <button onClick={() => copyAddr(sharedAddress, 'EVM')} className="p-2 hover:bg-emerald-100 rounded">
-              <svg className="w-5 h-5 text-emerald-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
-            </button>
+            <div className="flex flex-col gap-2">
+              <button onClick={() => copyAddr(sharedAddress, 'EVM')} className="p-2 hover:bg-emerald-100 rounded" title="Copy address">
+                <svg className="w-5 h-5 text-emerald-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+              </button>
+              <a
+                href={addressExplorerUrl('arc', sharedAddress)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="p-2 hover:bg-emerald-100 rounded"
+                title="View on Arc explorer"
+              >
+                <ExplorerIcon className="w-5 h-5 text-emerald-700" />
+              </a>
+            </div>
           </div>
 
           <div className="bg-purple-50 rounded-lg p-4 border border-purple-200 flex justify-between gap-4">
@@ -398,9 +456,20 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
               <p className="font-mono text-sm text-slate-900 break-all">{wallets.solana.address}</p>
               <p className="text-xs text-purple-700 mt-2">Solana Devnet</p>
             </div>
-            <button onClick={() => copyAddr(wallets.solana.address, 'Solana')} className="p-2 hover:bg-purple-100 rounded">
-              <svg className="w-5 h-5 text-purple-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
-            </button>
+            <div className="flex flex-col gap-2">
+              <button onClick={() => copyAddr(wallets.solana.address, 'Solana')} className="p-2 hover:bg-purple-100 rounded" title="Copy address">
+                <svg className="w-5 h-5 text-purple-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+              </button>
+              <a
+                href={addressExplorerUrl('solana', wallets.solana.address)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="p-2 hover:bg-purple-100 rounded"
+                title="View on Solana explorer"
+              >
+                <ExplorerIcon className="w-5 h-5 text-purple-700" />
+              </a>
+            </div>
           </div>
         </div>
 
@@ -413,9 +482,20 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
             { label: 'Solana Devnet', icon: '◎', chain: 'solana' as const },
           ].map(({ label, icon, chain }) => (
             <div key={chain} className="bg-slate-50 rounded-lg p-4 border border-slate-200">
-              <div className="flex items-center gap-2 mb-3">
-                <span className="text-xl">{icon}</span>
-                <p className="font-semibold text-slate-900 text-sm">{label}</p>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">{icon}</span>
+                  <p className="font-semibold text-slate-900 text-sm">{label}</p>
+                </div>
+                <a
+                  href={addressExplorerUrl(chain, chain === 'solana' ? wallets.solana.address : sharedAddress)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-slate-400 hover:text-slate-700"
+                  title={`View on ${label} explorer`}
+                >
+                  <ExplorerIcon className="w-4 h-4" />
+                </a>
               </div>
               <div className="space-y-2">
                 <div>
@@ -507,7 +587,18 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
               <div className="bg-emerald-50 rounded-lg p-6 border border-emerald-200">
                 <div className="flex items-start justify-between mb-2">
                   <div>
-                    <h3 className="font-bold text-slate-900 mb-1">Circle Gateway Unified Balance</h3>
+                    <div className="flex items-center gap-2 mb-1">
+                      <h3 className="font-bold text-slate-900">Circle Gateway Unified Balance</h3>
+                      <a
+                        href={addressExplorerUrl('arc', GATEWAY_WALLET_ADDRESS)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-emerald-500 hover:text-emerald-700"
+                        title="View Gateway contract on explorer"
+                      >
+                        <ExplorerIcon className="w-4 h-4" />
+                      </a>
+                    </div>
                     <p className="text-sm text-slate-700">
                       Deposit USDC from Arc, Avax, or Base into the Gateway Wallet contract. Once finalized, the balance is unified and accessible on any supported chain.
                     </p>
@@ -515,7 +606,7 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
                   <div className="text-right min-w-[140px]">
                     <p className="text-xs text-slate-600 mb-1">Unified Balance</p>
                     <p className="text-3xl font-bold text-slate-900">${gwTotal.toFixed(2)}</p>
-                    <p className="text-xs text-slate-500">USDC</p>
+                    <p className="text-xs text-slate-500">USDC only</p>
                   </div>
                 </div>
                 {gwTotal > 0 && (
@@ -593,7 +684,6 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
                             const bal = selectedChain === 'arc' ? balances.arc.usdc : 
                                         selectedChain === 'avax' ? balances.avax.usdc :
                                         balances.base.usdc;
-                            // Leave a small buffer for gas (not needed on Arc since USDC is native but safe)
                             const max = Math.max(0, parseFloat(bal) - 0.01);
                             setDepositAmount(max.toFixed(2));
                           }}
@@ -650,7 +740,7 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
                         <p className="text-slate-500">
                           Approval tx:{' '}
                           <a
-                            href={explorerLink(selectedChain, depositResult.approvalTxHash)}
+                            href={txExplorerUrl(selectedChain, depositResult.approvalTxHash)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="font-mono text-blue-600 hover:underline"
@@ -662,7 +752,7 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
                           <p className="text-slate-500">
                             Deposit tx:{' '}
                             <a
-                              href={explorerLink(selectedChain, depositResult.depositTxHash)}
+                              href={txExplorerUrl(selectedChain, depositResult.depositTxHash)}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="font-mono text-blue-600 hover:underline"
@@ -694,11 +784,11 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
                   </div>
                   <div className="space-y-1">
                     <p className="font-semibold text-slate-900">2. Unified Balance</p>
-                    <p>Your deposits from any chain are aggregated. You can transfer the full amount to any supported destination chain instantly.</p>
+                    <p>Your deposits from all chains are aggregated and can be used as a unified balance in the trading terminal.</p>
                   </div>
                   <div className="space-y-1">
-                    <p className="font-semibold text-slate-900">3. Instant Transfer</p>
-                    <p>Sign a burn intent → Gateway attests → Mint on destination chain. The entire flow completes in under 500ms.</p>
+                    <p className="font-semibold text-slate-900">3. Finality</p>
+                    <p>Transfer time depends on chain Finality. Note that Base Sepolia deposits can take upto 20 minutes</p>
                   </div>
                 </div>
               </div>
@@ -717,9 +807,15 @@ export function MultiChainWalletInterface({ wallets, walletSetId, sharedAddress 
                     </p>
                   </div>
                   <div className="text-right">
-                    <p className="text-xs text-slate-400 mb-1">Total Balance</p>
-                    <p className="text-3xl font-bold">${totalUSDC.toFixed(2)}</p>
-                    <p className="text-xs text-slate-400 mt-1">USDC</p>
+                    <p className="text-xs text-slate-400 mb-1">Arc Wallet</p>
+                    <p className="text-3xl font-bold">${parseFloat(balances.arc.usdc).toFixed(2)}</p>
+                    <p className="text-xs text-slate-400 mt-1">USDC + €{parseFloat(balances.arc.eurc).toFixed(2)} EURC</p>
+                    {gwTotal > 0 && (
+                      <>
+                        <p className="text-xs text-emerald-400 mt-3 mb-0.5">Gateway</p>
+                        <p className="text-lg font-bold">${gwTotal.toFixed(2)} USDC</p>
+                      </>
+                    )}
                   </div>
                 </div>
 

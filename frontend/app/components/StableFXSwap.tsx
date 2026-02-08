@@ -1,12 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 interface StableFXSwapProps {
   walletAddress: string; // Arc testnet wallet address
-  arcWalletId: string; // Circle wallet ID for Arc
-  usdcBalance: number;
-  eurcBalance: number;
+  arcWalletId: string;   // Circle wallet ID for Arc
+  usdcBalance: number;   // Arc wallet USDC balance specifically
+  eurcBalance: number;   // Arc wallet EURC balance specifically
   onRefreshBalances: () => void;
 }
 
@@ -31,6 +31,14 @@ type SwapStep =
   | 'complete'        // Trade complete
   | 'error';          // Error occurred
 
+function ExplorerIcon({ className = 'w-4 h-4' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+    </svg>
+  );
+}
+
 export function StableFXSwap({ 
   walletAddress, 
   arcWalletId, 
@@ -45,38 +53,41 @@ export function StableFXSwap({
   const [error, setError] = useState('');
   const [tradeId, setTradeId] = useState<string | null>(null);
   const [txHashes, setTxHashes] = useState<{ approval?: string; funding?: string }>({});
-  const [permit2Approved, setPermit2Approved] = useState(false);
+  const [permit2Approved, setPermit2Approved] = useState<Record<string, boolean>>({ USDC: false, EURC: false });
   const [checkingPermit2, setCheckingPermit2] = useState(true);
 
   const toCurrency = fromCurrency === 'USDC' ? 'EURC' : 'USDC';
   const availableBalance = fromCurrency === 'USDC' ? usdcBalance : eurcBalance;
 
-  // Check Permit2 allowance on mount
+  // Check Permit2 allowance for BOTH currencies on mount
   useEffect(() => {
-    checkPermit2Allowance();
-  }, []);
+    checkPermit2AllowanceBoth();
+  }, [walletAddress]);
 
-  const checkPermit2Allowance = async () => {
+  const checkPermit2AllowanceBoth = async () => {
     setCheckingPermit2(true);
     try {
-      const res = await fetch('/api/stablefx/check-permit2-allowance', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          walletAddress,
-          currency: fromCurrency 
-        }),
-      });
-      const data = await res.json();
-      setPermit2Approved(data.hasAllowance || false);
-    } catch (err) {
-      console.error('Error checking Permit2:', err);
+      const results: Record<string, boolean> = { USDC: false, EURC: false };
+      for (const currency of ['USDC', 'EURC'] as const) {
+        try {
+          const res = await fetch('/api/stablefx/check-permit2-allowance', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ walletAddress, currency }),
+          });
+          const data = await res.json();
+          results[currency] = data.hasAllowance || false;
+        } catch (err) {
+          console.error(`Error checking Permit2 for ${currency}:`, err);
+        }
+      }
+      setPermit2Approved(results);
     } finally {
       setCheckingPermit2(false);
     }
   };
 
-  const grantPermit2Allowance = async () => {
+  const grantPermit2Allowance = async (currency: 'USDC' | 'EURC') => {
     setStep('signing');
     setError('');
     
@@ -86,7 +97,7 @@ export function StableFXSwap({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           walletId: arcWalletId,
-          currency: fromCurrency 
+          currency,
         }),
       });
 
@@ -96,8 +107,8 @@ export function StableFXSwap({
         throw new Error(data.error || 'Failed to grant Permit2 allowance');
       }
 
-      setPermit2Approved(true);
-      alert('✅ Permit2 allowance granted! You can now execute swaps.');
+      setPermit2Approved(prev => ({ ...prev, [currency]: true }));
+      alert(`✅ Permit2 allowance granted for ${currency}! You can now execute swaps.`);
       setStep('input');
     } catch (err: any) {
       setError(err.message);
@@ -112,7 +123,7 @@ export function StableFXSwap({
     }
 
     if (parseFloat(amount) > availableBalance) {
-      setError(`Insufficient ${fromCurrency} balance`);
+      setError(`Insufficient ${fromCurrency} balance on Arc wallet`);
       return;
     }
 
@@ -194,7 +205,6 @@ export function StableFXSwap({
       console.log('[swap] Trade signed successfully');
 
       // Step 3: Fetch the trade details to get contractTradeId
-      // After signing, the trade should have reached pending_settlement and have a contractTradeId
       setStep('fetching-contract-id');
       console.log('[swap] Fetching trade details for contractTradeId...');
       
@@ -215,9 +225,9 @@ export function StableFXSwap({
 
       console.log('[swap] Got contractTradeId:', contractTradeId);
 
-      // Step 4: Fund the trade
+      // Step 4: Fund the trade (always uses Arc wallet via arcWalletId)
       setStep('funding');
-      console.log('[swap] Funding trade...');
+      console.log('[swap] Funding trade with Arc wallet...');
 
       const fundRes = await fetch('/api/stablefx/fund-trade', {
         method: 'POST',
@@ -266,11 +276,12 @@ export function StableFXSwap({
   };
 
   const flipCurrencies = () => {
-    setFromCurrency(fromCurrency === 'USDC' ? 'EURC' : 'USDC');
+    const newFrom = fromCurrency === 'USDC' ? 'EURC' : 'USDC';
+    setFromCurrency(newFrom);
     setAmount('');
     setQuote(null);
     setError('');
-    checkPermit2Allowance();
+    // No need to re-check Permit2 – we already checked both on mount
   };
 
   // Calculate time until quote expires
@@ -299,91 +310,107 @@ export function StableFXSwap({
     return () => clearInterval(interval);
   }, [quote, step]);
 
+  // ── Loading state ───────────────────────────────────────────────────
   if (checkingPermit2) {
     return (
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-8">
-        <div className="text-center py-8">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-900 mx-auto mb-3"></div>
-          <p className="text-sm text-slate-600">Checking Permit2 allowance...</p>
-        </div>
+      <div className="py-8 text-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-900 mx-auto mb-3"></div>
+        <p className="text-sm text-slate-600">Checking Permit2 allowances...</p>
       </div>
     );
   }
 
-  if (!permit2Approved) {
+  // ── Permit2 approval needed for current fromCurrency ────────────────
+  if (!permit2Approved[fromCurrency]) {
     return (
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-8">
-        <div className="mb-6">
-          <h2 className="text-2xl font-bold text-slate-900 mb-2">Enable StableFX Swaps</h2>
-          <p className="text-slate-600">
-            Before you can execute swaps, you need to grant the Permit2 contract permission to transfer {fromCurrency} on your behalf. This is a one-time setup per token.
+      <div className="space-y-4">
+        <div className="mb-4">
+          <h2 className="text-xl font-bold text-slate-900 mb-1">Enable StableFX Swaps</h2>
+          <p className="text-sm text-slate-600">
+            Grant Permit2 permission to transfer {fromCurrency} from your Arc wallet. One-time setup per token.
           </p>
         </div>
 
-        <div className="bg-amber-50 rounded-lg p-4 border border-amber-200 mb-6">
-          <div className="flex items-start gap-3">
-            <svg className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-            <div>
-              <p className="text-sm font-semibold text-amber-900 mb-1">What is Permit2?</p>
-              <p className="text-sm text-amber-800">
-                Permit2 is a token approval contract by Uniswap that allows you to grant permissions once and use them across multiple protocols. It's more gas-efficient and secure than traditional approvals.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-sm font-medium text-slate-700">Token to Approve</span>
-              <span className="font-semibold text-slate-900">{fromCurrency}</span>
-            </div>
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-sm font-medium text-slate-700">Contract</span>
-              <span className="font-mono text-xs text-slate-600">Permit2</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-sm font-medium text-slate-700">Chain</span>
-              <span className="text-sm text-slate-900">Arc Testnet</span>
-            </div>
-          </div>
-
-          <button
-            onClick={grantPermit2Allowance}
-            disabled={step === 'signing'}
-            className="w-full px-6 py-4 bg-slate-900 text-white font-semibold rounded-lg hover:bg-slate-800 disabled:opacity-50 transition text-lg"
-          >
-            {step === 'signing' ? 'Granting Permission...' : `Grant Permit2 Permission for ${fromCurrency}`}
-          </button>
-
-          <p className="text-xs text-slate-500 text-center">
-            This transaction will be signed using your Circle wallet on Arc testnet. You only need to do this once per token.
+        <div className="bg-amber-50 rounded-lg p-3 border border-amber-200">
+          <p className="text-xs text-amber-900">
+            <strong>Permit2</strong> is a token approval contract by Uniswap. More gas-efficient and secure than traditional approvals.
           </p>
         </div>
+
+        <div className="bg-slate-50 rounded-lg p-3 border border-slate-200 text-sm space-y-1.5">
+          <div className="flex justify-between">
+            <span className="text-slate-600">Token</span>
+            <span className="font-semibold text-slate-900">{fromCurrency}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-slate-600">Chain</span>
+            <span className="text-slate-900">Arc Testnet</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-slate-600">Wallet</span>
+            <span className="font-mono text-xs text-slate-600">{walletAddress.slice(0, 8)}...{walletAddress.slice(-6)}</span>
+          </div>
+        </div>
+
+        <button
+          onClick={() => grantPermit2Allowance(fromCurrency)}
+          disabled={step === 'signing'}
+          className="w-full px-4 py-3 bg-slate-900 text-white font-semibold rounded-lg hover:bg-slate-800 disabled:opacity-50 transition"
+        >
+          {step === 'signing' ? 'Granting Permission...' : `Grant Permit2 for ${fromCurrency}`}
+        </button>
+
+        {/* Allow flipping even when not approved */}
+        <button
+          onClick={flipCurrencies}
+          className="w-full px-4 py-2 text-sm text-slate-600 hover:text-slate-900 transition"
+        >
+          Switch to {toCurrency} → {fromCurrency} instead
+        </button>
+
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-800">{error}</div>
+        )}
       </div>
     );
   }
 
+  // ── Main swap interface ─────────────────────────────────────────────
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-8">
+    <div className="space-y-4">
       {/* Header */}
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-slate-900 mb-2">StableFX Spot Swap</h2>
-        <p className="text-slate-600">
-          Institutional RFQ-based forex conversion with best execution pricing
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-slate-900">StableFX Spot Swap</h2>
+          <p className="text-xs text-slate-500">Institutional RFQ-based forex conversion</p>
+        </div>
+        <a
+          href={`https://testnet.arcscan.app/address/${walletAddress}?tab=token_transfers`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800 transition"
+          title="View Arc wallet token transfers"
+        >
+          <ExplorerIcon className="w-3.5 h-3.5" />
+          Txns
+        </a>
+      </div>
+
+      {/* Source info */}
+      <div className="bg-blue-50 rounded-lg px-3 py-2 border border-blue-200">
+        <p className="text-xs text-blue-900">
+          Swaps use your <strong>Arc wallet</strong> balance. USDC: ${usdcBalance.toFixed(2)} · EURC: €{eurcBalance.toFixed(2)}
         </p>
       </div>
 
       {/* Input Interface */}
       {step === 'input' && (
-        <div className="space-y-6">
+        <div className="space-y-4">
           {/* From Currency */}
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">You Pay</label>
-            <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
-              <div className="flex items-center justify-between mb-3">
+            <label className="block text-xs font-medium text-slate-600 mb-1">You Pay</label>
+            <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
+              <div className="flex items-center justify-between mb-2">
                 <input
                   type="number"
                   step="0.01"
@@ -391,14 +418,14 @@ export function StableFXSwap({
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                   placeholder="0.00"
-                  className="text-2xl font-bold bg-transparent border-none outline-none flex-1"
+                  className="text-xl font-bold bg-transparent border-none outline-none flex-1"
                 />
-                <div className="flex items-center gap-2 px-4 py-2 bg-white rounded-lg border border-slate-300">
-                  <span className="text-xl">{fromCurrency === 'USDC' ? '$' : '€'}</span>
-                  <span className="font-semibold text-slate-900">{fromCurrency}</span>
+                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white rounded-lg border border-slate-300">
+                  <span className="text-lg">{fromCurrency === 'USDC' ? '$' : '€'}</span>
+                  <span className="font-semibold text-slate-900 text-sm">{fromCurrency}</span>
                 </div>
               </div>
-              <div className="flex justify-between items-center text-sm">
+              <div className="flex justify-between items-center text-xs">
                 <span className="text-slate-500">Balance: {fromCurrency === 'USDC' ? '$' : '€'}{availableBalance.toFixed(2)}</span>
                 <button
                   onClick={() => setAmount(availableBalance.toFixed(2))}
@@ -414,9 +441,9 @@ export function StableFXSwap({
           <div className="flex justify-center">
             <button
               onClick={flipCurrencies}
-              className="p-3 bg-slate-100 hover:bg-slate-200 rounded-full transition"
+              className="p-2 bg-slate-100 hover:bg-slate-200 rounded-full transition"
             >
-              <svg className="w-5 h-5 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
               </svg>
             </button>
@@ -424,13 +451,13 @@ export function StableFXSwap({
 
           {/* To Currency */}
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">You Receive (Estimated)</label>
-            <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+            <label className="block text-xs font-medium text-slate-600 mb-1">You Receive (Estimated)</label>
+            <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
               <div className="flex items-center justify-between">
-                <span className="text-2xl font-bold text-slate-400">—</span>
-                <div className="flex items-center gap-2 px-4 py-2 bg-white rounded-lg border border-slate-300">
-                  <span className="text-xl">{toCurrency === 'USDC' ? '$' : '€'}</span>
-                  <span className="font-semibold text-slate-900">{toCurrency}</span>
+                <span className="text-xl font-bold text-slate-400">—</span>
+                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white rounded-lg border border-slate-300">
+                  <span className="text-lg">{toCurrency === 'USDC' ? '$' : '€'}</span>
+                  <span className="font-semibold text-slate-900 text-sm">{toCurrency}</span>
                 </div>
               </div>
             </div>
@@ -439,84 +466,76 @@ export function StableFXSwap({
           <button
             onClick={requestQuote}
             disabled={!amount || parseFloat(amount) <= 0 || parseFloat(amount) > availableBalance}
-            className="w-full px-6 py-4 bg-slate-900 text-white font-semibold rounded-lg hover:bg-slate-800 disabled:opacity-50 transition text-lg"
+            className="w-full px-4 py-3 bg-slate-900 text-white font-semibold rounded-lg hover:bg-slate-800 disabled:opacity-50 transition"
           >
             Get Quote
           </button>
-
-          <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-            <p className="text-sm text-blue-900">
-              <strong>RFQ Mode:</strong> Your quote request is sent to institutional market makers who compete to provide the best rate. Quotes are valid for 5 minutes.
-            </p>
-          </div>
         </div>
       )}
 
       {/* Quote Display */}
       {(step === 'quote-ready' || step === 'quoting') && (
-        <div className="space-y-6">
+        <div className="space-y-4">
           {step === 'quoting' ? (
-            <div className="text-center py-12">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-slate-900 mx-auto mb-4"></div>
-              <p className="font-semibold text-slate-900 mb-2">Requesting Quote from Market Makers...</p>
-              <p className="text-sm text-slate-600">This usually takes 1-3 seconds</p>
+            <div className="text-center py-8">
+              <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-slate-900 mx-auto mb-3"></div>
+              <p className="font-semibold text-slate-900 mb-1">Requesting Quote...</p>
+              <p className="text-xs text-slate-600">1-3 seconds</p>
             </div>
           ) : quote && (
             <>
-              {/* Quote Details */}
-              <div className="bg-emerald-50 rounded-lg p-6 border border-emerald-200">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="font-semibold text-emerald-900">Best Quote Received</h3>
+              <div className="bg-emerald-50 rounded-lg p-4 border border-emerald-200">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-semibold text-emerald-900 text-sm">Best Quote</h3>
                   {timeRemaining !== null && (
-                    <span className="text-sm font-medium text-emerald-700">
+                    <span className="text-xs font-medium text-emerald-700">
                       Expires in {timeRemaining}s
                     </span>
                   )}
                 </div>
 
-                <div className="space-y-3">
+                <div className="space-y-2">
                   <div className="flex justify-between items-center">
-                    <span className="text-slate-600">You Pay</span>
-                    <span className="text-xl font-bold text-slate-900">
+                    <span className="text-sm text-slate-600">You Pay</span>
+                    <span className="text-lg font-bold text-slate-900">
                       {fromCurrency === 'USDC' ? '$' : '€'}{parseFloat(quote.from.amount).toFixed(2)} {quote.from.currency}
                     </span>
                   </div>
 
                   <div className="flex justify-between items-center">
-                    <span className="text-slate-600">You Receive</span>
-                    <span className="text-xl font-bold text-emerald-700">
+                    <span className="text-sm text-slate-600">You Receive</span>
+                    <span className="text-lg font-bold text-emerald-700">
                       {toCurrency === 'USDC' ? '$' : '€'}{parseFloat(quote.to.amount).toFixed(2)} {quote.to.currency}
                     </span>
                   </div>
 
-                  <div className="pt-3 border-t border-emerald-200">
-                    <div className="flex justify-between items-center text-sm mb-2">
-                      <span className="text-slate-600">Exchange Rate</span>
+                  <div className="pt-2 border-t border-emerald-200">
+                    <div className="flex justify-between items-center text-xs mb-1">
+                      <span className="text-slate-600">Rate</span>
                       <span className="font-semibold text-slate-900">
                         1 {quote.from.currency} = {parseFloat(quote.rate).toFixed(6)} {quote.to.currency}
                       </span>
                     </div>
-                    <div className="flex justify-between items-center text-sm">
+                    <div className="flex justify-between items-center text-xs">
                       <span className="text-slate-600">Fee</span>
                       <span className="font-semibold text-slate-900">
-                        {parseFloat(quote.fee.amount).toFixed(2)} {quote.fee.currency}
+                        {parseFloat(quote.fee.amount).toFixed(4)} {quote.fee.currency}
                       </span>
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Action Buttons */}
-              <div className="flex gap-3">
+              <div className="flex gap-2">
                 <button
                   onClick={reset}
-                  className="flex-1 px-6 py-4 bg-slate-200 text-slate-900 font-semibold rounded-lg hover:bg-slate-300 transition"
+                  className="flex-1 px-4 py-3 bg-slate-200 text-slate-900 font-semibold rounded-lg hover:bg-slate-300 transition"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={executeSwap}
-                  className="flex-1 px-6 py-4 bg-emerald-600 text-white font-semibold rounded-lg hover:bg-emerald-700 transition text-lg"
+                  className="flex-1 px-4 py-3 bg-emerald-600 text-white font-semibold rounded-lg hover:bg-emerald-700 transition"
                 >
                   Execute Swap
                 </button>
@@ -528,57 +547,56 @@ export function StableFXSwap({
 
       {/* Processing Steps */}
       {(step === 'creating-trade' || step === 'signing' || step === 'fetching-contract-id' || step === 'funding') && (
-        <div className="text-center py-12 space-y-4">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-slate-900 mx-auto"></div>
+        <div className="text-center py-8 space-y-3">
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-slate-900 mx-auto"></div>
           <div>
-            <p className="font-semibold text-slate-900 mb-2">
-              {step === 'creating-trade' && 'Creating Trade on StableFX...'}
+            <p className="font-semibold text-slate-900 mb-1">
+              {step === 'creating-trade' && 'Creating Trade...'}
               {step === 'signing' && 'Signing Trade Intent...'}
-              {step === 'fetching-contract-id' && 'Preparing Trade for Funding...'}
+              {step === 'fetching-contract-id' && 'Preparing for Funding...'}
               {step === 'funding' && 'Funding Trade Onchain...'}
             </p>
-            <p className="text-sm text-slate-600">
+            <p className="text-xs text-slate-600">
               {step === 'fetching-contract-id' 
-                ? 'Waiting for trade to reach pending_settlement status...'
-                : 'This may take 30-60 seconds. Please wait.'}
+                ? 'Waiting for pending_settlement status...'
+                : '30-60 seconds. Please wait.'}
             </p>
           </div>
 
           {tradeId && (
-            <p className="text-xs text-slate-500 font-mono">Trade ID: {tradeId}</p>
+            <p className="text-xs text-slate-500 font-mono">Trade: {tradeId.slice(0, 12)}...</p>
           )}
         </div>
       )}
 
       {/* Success */}
       {step === 'complete' && quote && (
-        <div className="space-y-6">
-          <div className="bg-emerald-50 rounded-lg p-6 border border-emerald-200 text-center">
-            <div className="w-16 h-16 bg-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4">
-              <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="space-y-4">
+          <div className="bg-emerald-50 rounded-lg p-5 border border-emerald-200 text-center">
+            <div className="w-12 h-12 bg-emerald-600 rounded-full flex items-center justify-center mx-auto mb-3">
+              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
             </div>
-            <h3 className="text-2xl font-bold text-emerald-900 mb-2">Swap Complete!</h3>
-            <p className="text-slate-700 mb-4">
-              Successfully swapped {parseFloat(quote.from.amount).toFixed(2)} {quote.from.currency} for {parseFloat(quote.to.amount).toFixed(2)} {quote.to.currency}
+            <h3 className="text-lg font-bold text-emerald-900 mb-1">Swap Complete!</h3>
+            <p className="text-sm text-slate-700 mb-3">
+              {parseFloat(quote.from.amount).toFixed(2)} {quote.from.currency} → {parseFloat(quote.to.amount).toFixed(2)} {quote.to.currency}
             </p>
             
-            {txHashes.funding && (
-              <a
-                href={`https://arc-testnet.explorer.circle.com/tx/${txHashes.funding}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm text-blue-600 hover:underline"
-              >
-                View Transaction →
-              </a>
-            )}
+            <a
+              href={`https://testnet.arcscan.app/address/${walletAddress}?tab=token_transfers`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-sm text-blue-600 hover:underline"
+            >
+              <ExplorerIcon className="w-4 h-4" />
+              View Token Transfers on Explorer
+            </a>
           </div>
 
           <button
             onClick={reset}
-            className="w-full px-6 py-4 bg-slate-900 text-white font-semibold rounded-lg hover:bg-slate-800 transition"
+            className="w-full px-4 py-3 bg-slate-900 text-white font-semibold rounded-lg hover:bg-slate-800 transition"
           >
             Make Another Swap
           </button>
@@ -587,15 +605,15 @@ export function StableFXSwap({
 
       {/* Error */}
       {step === 'error' && (
-        <div className="space-y-4">
-          <div className="bg-red-50 rounded-lg p-6 border border-red-200">
-            <p className="font-semibold text-red-900 mb-2">Error</p>
-            <p className="text-sm text-red-800">{error}</p>
+        <div className="space-y-3">
+          <div className="bg-red-50 rounded-lg p-4 border border-red-200">
+            <p className="font-semibold text-red-900 mb-1 text-sm">Error</p>
+            <p className="text-xs text-red-800">{error}</p>
           </div>
 
           <button
             onClick={reset}
-            className="w-full px-6 py-4 bg-slate-900 text-white font-semibold rounded-lg hover:bg-slate-800 transition"
+            className="w-full px-4 py-3 bg-slate-900 text-white font-semibold rounded-lg hover:bg-slate-800 transition"
           >
             Try Again
           </button>

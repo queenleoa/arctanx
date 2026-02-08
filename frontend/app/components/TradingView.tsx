@@ -1,36 +1,144 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { createChart, ColorType } from 'lightweight-charts';
+import { createPublicClient, http, formatUnits } from 'viem';
 import { StableFXSwap } from './StableFXSwap';
+
+const arcTestnet = {
+  id: 5042002,
+  name: 'Arc Testnet',
+  nativeCurrency: { decimals: 18, name: 'USDC', symbol: 'USDC' },
+  rpcUrls: { default: { http: ['https://arc-testnet.drpc.org'] } },
+} as const;
+
+const EURC_ADDRESS = '0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a';
+const GATEWAY_WALLET_ADDRESS = '0x0077777d7EBA4688BDeF3E311b846F25870A19B9';
+
+const ERC20_ABI = [{
+  constant: true,
+  inputs: [{ name: '_owner', type: 'address' }],
+  name: 'balanceOf',
+  outputs: [{ name: 'balance', type: 'uint256' }],
+  type: 'function',
+}] as const;
 
 interface TradingViewProps {
   onBack: () => void;
-  usdcBalance: number;
-  eurcBalance: number;
+  arcUsdcBalance: number;
+  arcEurcBalance: number;
+  gatewayUsdcBalance: number;
+  gatewayPerChain: Record<string, string>;
   walletAddress: string;
   arcWalletId: string;
+  solanaAddress: string;
   onRefreshBalances: () => void;
+}
+
+type WalletSource = 'arc' | 'gateway';
+
+function ExplorerIcon({ className = 'w-4 h-4' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+    </svg>
+  );
 }
 
 export function TradingView({ 
   onBack, 
-  usdcBalance, 
-  eurcBalance, 
+  arcUsdcBalance: initialArcUsdc,
+  arcEurcBalance: initialArcEurc,
+  gatewayUsdcBalance: initialGwUsdc,
+  gatewayPerChain,
   walletAddress, 
   arcWalletId,
+  solanaAddress,
   onRefreshBalances 
 }: TradingViewProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<any>(null);
   const lineSeriesRef = useRef<any>(null);
   
-  const [tradingTab, setTradingTab] = useState<'long' | 'short' | 'swap'>('swap');
+  const [tradingTab, setTradingTab] = useState<'long' | 'short' | 'swap'>('long');
+  const [walletSource, setWalletSource] = useState<WalletSource>('arc');
   const [leverage, setLeverage] = useState('1');
   const [collateralAmount, setCollateralAmount] = useState('');
   const [currentPrice, setCurrentPrice] = useState<number | null>(null);
   const [positions, setPositions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Local balance state for dynamic refresh
+  const [arcUsdcBalance, setArcUsdcBalance] = useState(initialArcUsdc);
+  const [arcEurcBalance, setArcEurcBalance] = useState(initialArcEurc);
+  const [gatewayUsdcBalance, setGatewayUsdcBalance] = useState(initialGwUsdc);
+
+  // Sync initial props
+  useEffect(() => {
+    setArcUsdcBalance(initialArcUsdc);
+    setArcEurcBalance(initialArcEurc);
+    setGatewayUsdcBalance(initialGwUsdc);
+  }, [initialArcUsdc, initialArcEurc, initialGwUsdc]);
+
+  const arcClient = createPublicClient({ chain: arcTestnet, transport: http() });
+
+  // ── Dynamic balance refresh ─────────────────────────────────────────
+  const refreshLocalBalances = useCallback(async () => {
+    try {
+      // Arc USDC (native, 18 decimals)
+      const arcUsdcBal = await arcClient.getBalance({
+        address: walletAddress as `0x${string}`,
+      });
+      setArcUsdcBalance(parseFloat(formatUnits(arcUsdcBal, 18)));
+
+      // Arc EURC (ERC-20, 6 decimals)
+      try {
+        const arcEurcBal = await arcClient.readContract({
+          address: EURC_ADDRESS as `0x${string}`,
+          abi: ERC20_ABI,
+          functionName: 'balanceOf',
+          args: [walletAddress as `0x${string}`],
+        }) as bigint;
+        setArcEurcBalance(parseFloat(formatUnits(arcEurcBal, 6)));
+      } catch {}
+
+      // Gateway balance
+      try {
+        const res = await fetch('/api/gateway-balance', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            evmAddress: walletAddress,
+            solanaAddress: solanaAddress,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setGatewayUsdcBalance(parseFloat(data.totalUsdc ?? '0'));
+        }
+      } catch {}
+    } catch (e) {
+      console.error('TradingView balance refresh error:', e);
+    }
+  }, [walletAddress, solanaAddress]);
+
+  // Refresh balances on mount and every 10s
+  useEffect(() => {
+    refreshLocalBalances();
+    const id = setInterval(refreshLocalBalances, 10_000);
+    return () => clearInterval(id);
+  }, [refreshLocalBalances]);
+
+  // Combined refresh (local + parent)
+  const handleRefreshAll = useCallback(() => {
+    refreshLocalBalances();
+    onRefreshBalances();
+  }, [refreshLocalBalances, onRefreshBalances]);
+
+  // The effective USDC balance for trading depends on wallet source
+  const effectiveUsdcBalance = walletSource === 'arc' ? arcUsdcBalance : gatewayUsdcBalance;
+  // EURC is only available from Arc wallet (gateway only holds USDC)
+  const effectiveEurcBalance = arcEurcBalance;
 
   // Initialize chart
   useEffect(() => {
@@ -156,7 +264,7 @@ export function TradingView({
       return;
     }
 
-    if (parseFloat(collateralAmount) > usdcBalance) {
+    if (parseFloat(collateralAmount) > effectiveUsdcBalance) {
       alert('Insufficient USDC balance');
       return;
     }
@@ -171,6 +279,7 @@ export function TradingView({
       leverage: parseFloat(leverage),
       entryPrice: currentPrice,
       timestamp: new Date().toISOString(),
+      source: walletSource,
     };
 
     setPositions([...positions, newPosition]);
@@ -199,6 +308,17 @@ export function TradingView({
             </h2>
           </div>
           <div className="flex items-center gap-4">
+            {/* Explorer link */}
+            <a
+              href={`https://testnet.arcscan.app/address/${walletAddress}?tab=token_transfers`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white rounded-lg border border-slate-200 text-xs font-medium text-slate-700 hover:border-slate-400 transition"
+              title="View wallet on Arc explorer"
+            >
+              <ExplorerIcon className="w-3.5 h-3.5" />
+              Explorer
+            </a>
             <div className="flex items-center gap-2 px-3 py-1 bg-emerald-50 rounded-lg border border-emerald-200">
               <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
               <span className="text-xs font-medium text-emerald-700">Live Data</span>
@@ -257,6 +377,7 @@ export function TradingView({
                         <th className="text-left py-3 px-4 text-xs font-semibold text-slate-600 uppercase">Collateral</th>
                         <th className="text-left py-3 px-4 text-xs font-semibold text-slate-600 uppercase">Leverage</th>
                         <th className="text-left py-3 px-4 text-xs font-semibold text-slate-600 uppercase">Entry</th>
+                        <th className="text-left py-3 px-4 text-xs font-semibold text-slate-600 uppercase">Source</th>
                         <th className="text-left py-3 px-4 text-xs font-semibold text-slate-600 uppercase">PnL</th>
                         <th className="text-left py-3 px-4 text-xs font-semibold text-slate-600 uppercase"></th>
                       </tr>
@@ -287,6 +408,9 @@ export function TradingView({
                             <td className="py-3 px-4 text-sm text-slate-900">${position.collateral.toFixed(2)}</td>
                             <td className="py-3 px-4 text-sm text-slate-900">{position.leverage}x</td>
                             <td className="py-3 px-4 text-sm text-slate-900">${position.entryPrice.toFixed(6)}</td>
+                            <td className="py-3 px-4 text-xs text-slate-600">
+                              {position.source === 'gateway' ? 'Gateway' : 'Arc'}
+                            </td>
                             <td className="py-3 px-4">
                               <div className={`text-sm font-semibold ${pnl >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                                 ${pnl.toFixed(2)}
@@ -313,19 +437,64 @@ export function TradingView({
 
           {/* Right Side - Trading Panel */}
           <div className="space-y-6">
-            {/* Tabs */}
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-              <div className="flex border-b border-slate-200">
+
+            {/* ── Wallet Source Toggle ──────────────────────────────── */}
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-sm font-semibold text-slate-900">Funding Source</p>
+                <a
+                  href={
+                    walletSource === 'gateway'
+                      ? `https://testnet.arcscan.app/address/${GATEWAY_WALLET_ADDRESS}?tab=token_transfers`
+                      : `https://testnet.arcscan.app/address/${walletAddress}?tab=token_transfers`
+                  }
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-slate-400 hover:text-slate-700"
+                  title="View on explorer"
+                >
+                  <ExplorerIcon className="w-4 h-4" />
+                </a>
+              </div>
+              <div className="grid grid-cols-2 gap-2 mb-3">
                 <button
-                  onClick={() => setTradingTab('swap')}
-                  className={`flex-1 py-3 px-4 text-sm font-semibold ${
-                    tradingTab === 'swap'
-                      ? 'bg-blue-600 text-white'
-                      : 'text-slate-700 hover:bg-slate-50'
+                  onClick={() => setWalletSource('arc')}
+                  className={`rounded-lg p-3 border-2 text-left transition ${
+                    walletSource === 'arc'
+                      ? 'border-slate-900 bg-slate-50'
+                      : 'border-slate-200 hover:border-slate-400'
                   }`}
                 >
-                  Spot Swap (StableFX)
+                  <p className="text-xs font-semibold text-slate-900">🌐 Arc Wallet</p>
+                  <p className="text-sm font-bold text-slate-900 mt-1">${arcUsdcBalance.toFixed(2)}</p>
+                  <p className="text-xs text-slate-500">USDC</p>
+                  <p className="text-sm font-bold text-slate-900 mt-0.5">€{arcEurcBalance.toFixed(2)}</p>
+                  <p className="text-xs text-slate-500">EURC</p>
                 </button>
+                <button
+                  onClick={() => setWalletSource('gateway')}
+                  className={`rounded-lg p-3 border-2 text-left transition ${
+                    walletSource === 'gateway'
+                      ? 'border-emerald-600 bg-emerald-50'
+                      : 'border-slate-200 hover:border-emerald-400'
+                  }`}
+                >
+                  <p className="text-xs font-semibold text-emerald-800">⚡ Gateway</p>
+                  <p className="text-sm font-bold text-slate-900 mt-1">${gatewayUsdcBalance.toFixed(2)}</p>
+                  <p className="text-xs text-slate-500">USDC (unified)</p>
+                  <p className="text-xs text-slate-400 mt-1 italic">No EURC support</p>
+                </button>
+              </div>
+              <p className="text-xs text-slate-500 font-mono break-all">
+                {walletSource === 'gateway'
+                  ? GATEWAY_WALLET_ADDRESS
+                  : walletAddress}
+              </p>
+            </div>
+
+            {/* ── Trading Tabs ─────────────────────────────────────── */}
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="flex border-b border-slate-200">
                 <button
                   onClick={() => setTradingTab('long')}
                   className={`flex-1 py-3 px-4 text-sm font-semibold ${
@@ -346,6 +515,16 @@ export function TradingView({
                 >
                   Short
                 </button>
+                <button
+                  onClick={() => setTradingTab('swap')}
+                  className={`flex-1 py-3 px-4 text-sm font-semibold ${
+                    tradingTab === 'swap'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  Spot Swap
+                </button>
               </div>
 
               <div className="p-6">
@@ -354,9 +533,9 @@ export function TradingView({
                   <StableFXSwap
                     walletAddress={walletAddress}
                     arcWalletId={arcWalletId}
-                    usdcBalance={usdcBalance}
-                    eurcBalance={eurcBalance}
-                    onRefreshBalances={onRefreshBalances}
+                    usdcBalance={arcUsdcBalance}
+                    eurcBalance={arcEurcBalance}
+                    onRefreshBalances={handleRefreshAll}
                   />
                 )}
 
@@ -365,15 +544,24 @@ export function TradingView({
                   <div className="space-y-6">
                     <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
                       <p className="text-sm text-amber-900">
-                        <strong>Demo Mode:</strong> Perpetual futures trading is currently in demo mode. Use StableFX for real spot conversions.
+                        <strong>Demo Mode:</strong> Perpetual futures trading is currently in demo mode. Use Spot Swap tab for real StableFX conversions.
                       </p>
                     </div>
 
                     {/* Balance Display */}
                     <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
-                      <p className="text-xs text-slate-600 mb-1">Available Balance</p>
-                      <p className="text-2xl font-bold text-slate-900">${usdcBalance.toFixed(2)}</p>
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="text-xs text-slate-600">
+                          Available Balance ({walletSource === 'gateway' ? 'Gateway' : 'Arc Wallet'})
+                        </p>
+                      </div>
+                      <p className="text-2xl font-bold text-slate-900">${effectiveUsdcBalance.toFixed(2)}</p>
                       <p className="text-xs text-slate-500 mt-1">USDC</p>
+                      {walletSource === 'gateway' && (
+                        <p className="text-xs text-amber-600 mt-2">
+                          Gateway holds USDC only. For EURC positions, switch to Arc Wallet.
+                        </p>
+                      )}
                     </div>
 
                     {/* Collateral Amount */}
@@ -385,14 +573,14 @@ export function TradingView({
                         type="number"
                         step="0.01"
                         min="0"
-                        max={usdcBalance}
+                        max={effectiveUsdcBalance}
                         value={collateralAmount}
                         onChange={(e) => setCollateralAmount(e.target.value)}
                         placeholder="0.00"
                         className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-900 focus:border-slate-900 text-lg font-semibold"
                       />
                       <button
-                        onClick={() => setCollateralAmount(usdcBalance.toString())}
+                        onClick={() => setCollateralAmount(effectiveUsdcBalance.toFixed(2))}
                         className="mt-2 text-xs text-slate-600 hover:text-slate-900 font-medium"
                       >
                         Use Max
@@ -440,6 +628,12 @@ export function TradingView({
                         <span className="text-slate-600">Entry Price</span>
                         <span className="font-semibold text-slate-900">
                           {currentPrice ? `$${currentPrice.toFixed(6)}` : '—'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-slate-600">Source</span>
+                        <span className="font-semibold text-slate-900">
+                          {walletSource === 'gateway' ? 'Gateway (USDC)' : 'Arc Wallet'}
                         </span>
                       </div>
                       <div className="flex justify-between text-sm">
