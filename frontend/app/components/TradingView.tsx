@@ -118,11 +118,15 @@ export function TradingView({
   const [arcEurcBalance, setArcEurcBalance] = useState(initialArcEurc);
   const [gatewayUsdcBalance, setGatewayUsdcBalance] = useState(initialGwUsdc);
 
+  // Persistent offsets for mock position accounting (survive balance refreshes)
+  const arcUsdcOffsetRef = useRef(0);
+  const gatewayUsdcOffsetRef = useRef(0);
+
   // Sync initial props
   useEffect(() => {
-    setArcUsdcBalance(initialArcUsdc);
+    setArcUsdcBalance(initialArcUsdc + arcUsdcOffsetRef.current);
     setArcEurcBalance(initialArcEurc);
-    setGatewayUsdcBalance(initialGwUsdc);
+    setGatewayUsdcBalance(initialGwUsdc + gatewayUsdcOffsetRef.current);
   }, [initialArcUsdc, initialArcEurc, initialGwUsdc]);
 
   const arcClient = createPublicClient({ chain: arcTestnet, transport: http() });
@@ -134,7 +138,7 @@ export function TradingView({
       const arcUsdcBal = await arcClient.getBalance({
         address: walletAddress as `0x${string}`,
       });
-      setArcUsdcBalance(parseFloat(formatUnits(arcUsdcBal, 18)));
+      setArcUsdcBalance(parseFloat(formatUnits(arcUsdcBal, 18)) + arcUsdcOffsetRef.current);
 
       // Arc EURC (ERC-20, 6 decimals)
       try {
@@ -159,7 +163,7 @@ export function TradingView({
         });
         if (res.ok) {
           const data = await res.json();
-          setGatewayUsdcBalance(parseFloat(data.totalUsdc ?? '0'));
+          setGatewayUsdcBalance(parseFloat(data.totalUsdc ?? '0') + gatewayUsdcOffsetRef.current);
         }
       } catch {}
     } catch (e) {
@@ -366,6 +370,16 @@ export function TradingView({
 
     setPositions([...positions, newPosition]);
     setCollateralAmount('');
+
+    // Deduct collateral from the selected wallet source
+    const amt = parseFloat(collateralAmount);
+    if (walletSource === 'arc') {
+      arcUsdcOffsetRef.current -= amt;
+      setArcUsdcBalance(prev => Math.max(0, prev - amt));
+    } else {
+      gatewayUsdcOffsetRef.current -= amt;
+      setGatewayUsdcBalance(prev => Math.max(0, prev - amt));
+    }
     
     // Simulate margin deposit
     await simulateMarginDeposit(newPosition.id);
@@ -380,12 +394,16 @@ export function TradingView({
 
     // Simulate margin withdrawal
     await simulateMarginWithdrawal(positionId);
+
+    // Return collateral to Gateway wallet (cross-chain settlement)
+    gatewayUsdcOffsetRef.current += position.collateral;
+    setGatewayUsdcBalance(prev => prev + position.collateral);
     
     // Remove position after withdrawal completes
     setPositions(positions.filter(p => p.id !== positionId));
     
     const protocolInfo = PROTOCOL_INFO[position.protocol];
-    alert(`Position closed!\nMargin withdrawn from ${protocolInfo.name}`);
+    alert(`Position closed!\nMargin withdrawn from ${protocolInfo.name} → credited to Gateway`);
   };
 
   const notionalSize = collateralAmount && leverage 

@@ -9,10 +9,13 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@circle-fin/adapter-circle-wallets": "^1.1.1",
+    "@circle-fin/bridge-kit": "^1.5.0",
     "@circle-fin/developer-controlled-wallets": "^10.1.0",
     "@clerk/nextjs": "^6.37.2",
     "@solana/spl-token": "^0.4.14",
     "@solana/web3.js": "^1.98.4",
+    "ethers": "^6.16.0",
     "lightweight-charts": "^3.8.0",
     "next": "16.1.6",
     "react": "19.2.3",
