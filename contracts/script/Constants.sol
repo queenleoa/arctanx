@@ -9,8 +9,7 @@ library Constants {
     //                      DOMAIN IDS (CCTP)
     // ═══════════════════════════════════════════════════════════════════
     uint32 constant ARC_TESTNET_DOMAIN = 26;
-    uint32 constant ARBITRUM_SEPOLIA_DOMAIN = 3;
-    uint32 constant BASE_SEPOLIA_DOMAIN = 6;
+    uint32 constant ETH_SEPOLIA_DOMAIN = 0;
 
     // ═══════════════════════════════════════════════════════════════════
     //                    ARC TESTNET ADDRESSES
@@ -24,34 +23,27 @@ library Constants {
     address constant ARC_TOKEN_MESSENGER = 0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA;
     address constant ARC_MESSAGE_TRANSMITTER = 0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275;
     address constant ARC_TOKEN_MINTER = 0xb43db544E2c27092c107639Ad201b3dEfAbcF192;
+    address constant ARC_MESSAGE = 0xbaC0179bB358A8936169a63408C8481D582390C4;
 
     // ═══════════════════════════════════════════════════════════════════
-    //                  ARBITRUM SEPOLIA ADDRESSES
+    //                  ETHERUEM SEPOLIA ADDRESSES
     // ═══════════════════════════════════════════════════════════════════
-    // USDC on Arbitrum Sepolia (6 decimals) — this is the CCTP-minted USDC
-    address constant ARB_USDC = 0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d;
+    // USDC on Ethereum Sepolia (6 decimals) — this is the CCTP-minted USDC
+    address constant ETH_USDC = 0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238;
 
     // CCTP V2 Contracts on Arbitrum Sepolia
-    address constant ARB_TOKEN_MESSENGER = 0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA;
-    address constant ARB_MESSAGE_TRANSMITTER = 0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275;
+    address constant ETH_TOKEN_MESSENGER = 0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA;
+    address constant ETH_MESSAGE_TRANSMITTER = 0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275;
+    address constant ETH_TOKEN_MINTER=0xb43db544E2c27092c107639Ad201b3dEfAbcF192;
+    address constant ETH_MESSAGE=0xbaC0179bB358A8936169a63408C8481D582390C4;
 
-    // Aave V3 on Arbitrum Sepolia
-    // NOTE: This is the standard Aave V3 Pool address. Verify it accepts
-    //       the CCTP USDC (0x75faf1...) and not just USDC.e.
-    //       If Aave uses a different USDC, you may need a swap step.
-    address constant ARB_AAVE_POOL = 0x6Ae43d3271ff6888e7Fc43Fd7321a503ff738951;
-
-    // Aave aUSDC on Arbitrum Sepolia
-    // NOTE: This may differ depending on which USDC Aave uses.
-    //       Check Aave docs or query the pool for the correct aToken.
-    address constant ARB_AUSDC = 0x625E7708f30cA75bfd92586e17077590C60eb4cD;
-
-    // ═══════════════════════════════════════════════════════════════════
-    //                   BASE SEPOLIA ADDRESSES
-    // ═══════════════════════════════════════════════════════════════════
-    address constant BASE_USDC = 0x036CbD53842c5426634e7929541eC2318f3dCF7e;
-    address constant BASE_EURC = 0x808456652fdb597867f38412077A9182bf77359F;
-    address constant BASE_TOKEN_MESSENGER = 0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA;
+    // Aave V3 on ETH Sepolia
+    // NOTE: This is the standard Aave V3 Pool address. 
+    address constant ETH_AAVE_USDC_RESERVE = 0x94a9D9AC8a22534E3FaCa9F4e7F2E2cf85d5E4C8;
+    address constant ETH_AAVE_V3_POOL=0x6Ae43d3271ff6888e7Fc43Fd7321a503ff738951;
+    address constant ETH_AAVE_POOL_ADDRESS_PROVIDER=0x012bAC54348C0E635dCAc9D5FB99f06F24136C9A;
+    // Aave aUSDC on Eth Sepolia
+    address constant ETH_AUSDC = 0x16dA4541aD1807f4443d92D26044C1147406EB80;
 
     // ═══════════════════════════════════════════════════════════════════
     //                    PRICE FEED DEFAULTS

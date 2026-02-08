@@ -27,4 +27,7 @@ interface IMessageTransmitterV2 {
         uint32 minFinalityThreshold,
         bytes calldata messageBody
     ) external returns (uint64 nonce);
+
+    /// @notice Event emitted when a message is sent
+    event MessageSent(bytes message);
 }

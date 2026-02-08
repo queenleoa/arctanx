@@ -3,105 +3,100 @@ pragma solidity ^0.8.24;
 
 import "../interfaces/IERC20.sol";
 import "../interfaces/ITokenMessengerV2.sol";
+import "../interfaces/IStorkOracle.sol";
 
-/// @title PerpsDEX - Cross-Chain Perpetual Futures DEX (Arc Testnet)
-/// @notice POC orderbook-style perps with cross-chain margin rehypothecation
-/// @dev Deployed on Arc Testnet. Margin is bridged to Arbitrum Sepolia via CCTP
-///      and deposited into Aave V3 for yield (rehypothecation).
+/// @title PerpsDEX - Simplified Forex Perpetual Futures (Arc Testnet)
+/// @notice POC with cross-chain margin rehypothecation to Aave on Arbitrum
+/// @dev Margin deposited → bridged to Arbitrum → deposited to Aave → earning yield
+///      On close: withdrawn from Aave → bridged back → returned to trader
 ///
-/// ARCHITECTURE:
-///   User deposits USDC margin on Arc → CCTP bridge to Arbitrum →
-///   MarginVault deposits into Aave → yield accrues on idle margin.
-///   On close: MarginVault withdraws from Aave → CCTP bridge back →
-///   PerpsDEX settles PnL and returns funds to user.
-///
+/// SIMPLIFIED FOR POC:
+///   - Market orders only 
+///   - EUR/USD pair only via Stork Oracle
+///   - Simple hourly funding fee
+///   - No liquidations, no protocol fees
+///   - Focus: demonstrate cross-chain margin rehypothecation
 
 contract PerpsDEX {
-    // ═══════════════════════════════════════════════════════════════════
+    // ════════════════════════════════════════════════════════════════════
     //                          CONSTANTS
-    // ═══════════════════════════════════════════════════════════════════
+    // ════════════════════════════════════════════════════════════════════
 
     uint32 public constant ARBITRUM_SEPOLIA_DOMAIN = 3;
     uint32 public constant FINALITY_STANDARD = 2000;
-    uint32 public constant FINALITY_FAST = 1000;
-    uint256 public constant PRICE_PRECISION = 1e8;        // 8 decimal price
-    uint256 public constant FUNDING_RATE_PRECISION = 1e6; // basis point precision
+    
+    // Price precision: Stork uses 18 decimals, we convert to 6 for internal use
+    uint256 public constant PRICE_DECIMALS = 6;
+    uint256 public constant STORK_DECIMALS = 18;
+    
+    // Funding rate: 1% per hour = 10000 basis points
+    uint256 public constant FUNDING_RATE_PER_HOUR = 100; // 1% = 10000/1000000
+    uint256 public constant FUNDING_PRECISION = 1e6;
+    
     uint256 public constant MAX_LEVERAGE = 20;
+    uint256 public constant MIN_LEVERAGE = 1;
 
-    // ═══════════════════════════════════════════════════════════════════
+    // ════════════════════════════════════════════════════════════════════
     //                           TYPES
-    // ═══════════════════════════════════════════════════════════════════
+    // ════════════════════════════════════════════════════════════════════
 
     struct Position {
         address trader;
-        bytes32 pair;             // e.g., keccak256("EURUSD"), keccak256("USDEUR")
-        bool isLong;
-        uint256 margin;           // USDC margin in Arc-native decimals (18)
-        uint256 size;             // notional = margin * leverage (18 decimals)
-        uint256 entryPrice;       // 8 decimal precision
+        bool isLong;              // true = long EUR (buy EUR/USD), false = short EUR
+        address marginToken;      // USDC or EURC address
+        uint256 margin;           // in token's native decimals (18 for Arc USDC/EURC)
+        uint256 size;             // notional = margin * leverage (same decimals as margin)
+        uint8 leverage;
+        uint256 entryPrice;       // EUR/USD price (6 decimals)
         uint64 openTimestamp;
         bool isOpen;
-        bool pendingSettlement;   // waiting for funds to return from Arbitrum
-        int256 realizedPnl;       // set when position is closed
-        uint256 fundingOwed;      // accumulated funding fee
+        bool pendingSettlement;   // waiting for funds from Arbitrum
     }
 
-    enum OrderSide { Long, Short }
-
-    struct Order {
-        address trader;
-        bytes32 pair;
-        OrderSide side;
-        uint256 price;            // limit price (8 decimals)
-        uint256 margin;           // margin amount (18 decimals)
-        uint8 leverage;
-        bool isActive;
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
+    // ════════════════════════════════════════════════════════════════════
     //                           STATE
-    // ═══════════════════════════════════════════════════════════════════
+    // ════════════════════════════════════════════════════════════════════
 
     address public owner;
-    IERC20 public usdc;                          // Arc Testnet USDC
-    ITokenMessengerV2 public tokenMessenger;      // CCTP TokenMessengerV2 on Arc
-    address public marginVault;                   // MarginVault on Arbitrum Sepolia
-    bytes32 public marginVaultBytes32;            // marginVault as bytes32 for CCTP
-
-    // Oracle simulation: pair hash → price (8 decimals)
-    mapping(bytes32 => uint256) public prices;
-
+    
+    // Token addresses on Arc Testnet
+    IERC20 public immutable usdc;
+    IERC20 public immutable eurc;
+    
+    // CCTP on Arc Testnet
+    ITokenMessengerV2 public immutable tokenMessenger;
+    
+    // Stork Oracle for EUR/USD price
+    IStorkOracle public storkOracle;
+    bytes32 public constant EURUSD_FEED_ID = bytes32("EURUSD"); // Stork feed ID
+    
+    // MarginVault on Arbitrum Sepolia
+    address public marginVault;
+    bytes32 public marginVaultBytes32;
+    
     // Positions
     mapping(uint256 => Position) public positions;
     uint256 public nextPositionId;
 
-    // Simple orderbook: orderId → Order
-    mapping(uint256 => Order) public orders;
-    uint256 public nextOrderId;
-
-    // Funding rate: hourly rate in FUNDING_RATE_PRECISION units
-    // e.g., 100 = 0.01% per hour
-    uint256 public fundingRatePerHour = 100; // 0.01% default
-
-    // Total margin bridged out (for accounting)
-    uint256 public totalMarginBridged;
-
-    // CCTP transfer config
-    uint256 public maxCctpFee = 0;           // max fee for CCTP (0 = no fee for testnet)
-    uint32 public minFinality = FINALITY_STANDARD; // default to standard
-
-    // ═══════════════════════════════════════════════════════════════════
+    // ════════════════════════════════════════════════════════════════════
     //                           EVENTS
-    // ═══════════════════════════════════════════════════════════════════
+    // ════════════════════════════════════════════════════════════════════
 
     event PositionOpened(
         uint256 indexed positionId,
         address indexed trader,
-        bytes32 pair,
         bool isLong,
+        address marginToken,
         uint256 margin,
         uint256 size,
+        uint8 leverage,
         uint256 entryPrice
+    );
+
+    event MarginBridged(
+        uint256 indexed positionId,
+        uint256 amount,
+        uint64 cctpNonce
     );
 
     event PositionClosed(
@@ -112,310 +107,226 @@ contract PerpsDEX {
         uint256 fundingPaid
     );
 
+    event WithdrawalRequested(
+        uint256 indexed positionId,
+        address indexed trader,
+        uint256 amount,
+        uint64 cctpNonce
+    );
+
     event PositionSettled(
         uint256 indexed positionId,
         address indexed trader,
         uint256 amountReturned
     );
 
-    event MarginBridgedOut(
-        uint256 indexed positionId,
-        uint256 amount,
-        uint64 cctpNonce
-    );
-
-    event WithdrawalRequested(
-        uint256 indexed positionId,
-        address indexed trader,
-        uint256 amount
-    );
-
-    event OrderPlaced(
-        uint256 indexed orderId,
-        address indexed trader,
-        bytes32 pair,
-        OrderSide side,
-        uint256 price,
-        uint256 margin,
-        uint8 leverage
-    );
-
-    event OrderCancelled(uint256 indexed orderId);
-    event OrderFilled(uint256 indexed orderId, uint256 indexed positionId);
-    event PriceUpdated(bytes32 indexed pair, uint256 price);
-
-    // ═══════════════════════════════════════════════════════════════════
+    // ════════════════════════════════════════════════════════════════════
     //                         MODIFIERS
-    // ═══════════════════════════════════════════════════════════════════
+    // ════════════════════════════════════════════════════════════════════
 
     modifier onlyOwner() {
         require(msg.sender == owner, "not owner");
         _;
     }
 
-    // ═══════════════════════════════════════════════════════════════════
+    // ════════════════════════════════════════════════════════════════════
     //                        CONSTRUCTOR
-    // ═══════════════════════════════════════════════════════════════════
+    // ════════════════════════════════════════════════════════════════════
 
-    /// @param _usdc USDC token address on Arc Testnet
-    /// @param _tokenMessenger CCTP TokenMessengerV2 on Arc Testnet
-    /// @param _marginVault MarginVault address on Arbitrum Sepolia
     constructor(
         address _usdc,
+        address _eurc,
         address _tokenMessenger,
+        address _storkOracle,
         address _marginVault
     ) {
         owner = msg.sender;
         usdc = IERC20(_usdc);
+        eurc = IERC20(_eurc);
         tokenMessenger = ITokenMessengerV2(_tokenMessenger);
+        storkOracle = IStorkOracle(_storkOracle);
         marginVault = _marginVault;
         marginVaultBytes32 = _addressToBytes32(_marginVault);
     }
 
-    // ═══════════════════════════════════════════════════════════════════
-    //                    ORACLE (OWNER ONLY)
-    // ═══════════════════════════════════════════════════════════════════
+    // ════════════════════════════════════════════════════════════════════
+    //                    OPEN POSITION (MARKET ORDER)
+    // ════════════════════════════════════════════════════════════════════
 
-    /// @notice Set price for a trading pair (simulated oracle)
-    /// @param pair Pair identifier hash (use pairHash helper)
-    /// @param price Price in 8 decimal precision
-    function setPrice(bytes32 pair, uint256 price) external onlyOwner {
-        require(price > 0, "price must be > 0");
-        prices[pair] = price;
-        emit PriceUpdated(pair, price);
-    }
-
-    /// @notice Helper to compute pair hash from string
-    function pairHash(string calldata pairName) external pure returns (bytes32) {
-        return keccak256(abi.encodePacked(pairName));
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    //                     ORDERBOOK FUNCTIONS
-    // ═══════════════════════════════════════════════════════════════════
-
-    /// @notice Place a limit order. Margin is held in the contract until fill.
-    /// @dev User must approve USDC to this contract first.
-    function placeOrder(
-        bytes32 pair,
-        OrderSide side,
-        uint256 price,
-        uint256 margin,
-        uint8 leverage
-    ) external returns (uint256 orderId) {
-        require(price > 0, "invalid price");
-        require(margin > 0, "invalid margin");
-        require(leverage >= 1 && leverage <= MAX_LEVERAGE, "invalid leverage");
-        require(prices[pair] > 0, "pair not listed");
-
-        // Transfer margin from user to contract (held until fill or cancel)
-        require(usdc.transferFrom(msg.sender, address(this), margin), "transfer failed");
-
-        orderId = nextOrderId++;
-        orders[orderId] = Order({
-            trader: msg.sender,
-            pair: pair,
-            side: side,
-            price: price,
-            margin: margin,
-            leverage: leverage,
-            isActive: true
-        });
-
-        emit OrderPlaced(orderId, msg.sender, pair, side, price, margin, leverage);
-    }
-
-    /// @notice Cancel an active order and refund margin
-    function cancelOrder(uint256 orderId) external {
-        Order storage order = orders[orderId];
-        require(order.isActive, "order not active");
-        require(order.trader == msg.sender, "not your order");
-
-        order.isActive = false;
-        require(usdc.transfer(msg.sender, order.margin), "refund failed");
-
-        emit OrderCancelled(orderId);
-    }
-
-    /// @notice Fill an order at current market price (owner/matcher only for POC)
-    /// @dev In production, this would be a matching engine. For POC, owner fills
-    ///      orders when the market price crosses the limit price.
-    function fillOrder(uint256 orderId) external onlyOwner returns (uint256 positionId) {
-        Order storage order = orders[orderId];
-        require(order.isActive, "order not active");
-
-        uint256 currentPrice = prices[order.pair];
-        require(currentPrice > 0, "no price");
-
-        // Check price condition
-        if (order.side == OrderSide.Long) {
-            require(currentPrice <= order.price, "price above limit");
-        } else {
-            require(currentPrice >= order.price, "price below limit");
-        }
-
-        order.isActive = false;
-
-        // Open position with the margin already held in contract
-        positionId = _openPositionInternal(
-            order.trader,
-            order.pair,
-            order.side == OrderSide.Long,
-            order.margin,
-            order.leverage,
-            currentPrice
-        );
-
-        emit OrderFilled(orderId, positionId);
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    //                   MARKET ORDER (INSTANT FILL)
-    // ═══════════════════════════════════════════════════════════════════
-
-    /// @notice Open a position at market price (instant execution)
-    /// @dev User must approve USDC to this contract first.
+    /// @notice Open a new position at current market price
+    /// @param isLong true = long EUR (buy EUR/USD), false = short EUR
+    /// @param marginToken USDC or EURC address
+    /// @param margin Amount of margin in token's native decimals (18 for Arc)
+    /// @param leverage Leverage multiplier (1-20x)
     function openPosition(
-        bytes32 pair,
         bool isLong,
+        address marginToken,
         uint256 margin,
         uint8 leverage
     ) external returns (uint256 positionId) {
-        require(margin > 0, "invalid margin");
-        require(leverage >= 1 && leverage <= MAX_LEVERAGE, "invalid leverage");
+        require(
+            marginToken == address(usdc) || marginToken == address(eurc),
+            "invalid margin token"
+        );
+        require(margin > 0, "zero margin");
+        require(
+            leverage >= MIN_LEVERAGE && leverage <= MAX_LEVERAGE,
+            "invalid leverage"
+        );
 
-        uint256 currentPrice = prices[pair];
-        require(currentPrice > 0, "pair not listed");
+        // Get current EUR/USD price from Stork
+        uint256 currentPrice = _getStorkPrice();
+        require(currentPrice > 0, "invalid price");
 
-        // Transfer margin from user
-        require(usdc.transferFrom(msg.sender, address(this), margin), "transfer failed");
+        // Transfer margin from trader
+        IERC20(marginToken).transferFrom(msg.sender, address(this), margin);
 
-        positionId = _openPositionInternal(
+        // Calculate position size (notional value)
+        uint256 size = margin * leverage;
+
+        // Create position
+        positionId = nextPositionId++;
+        positions[positionId] = Position({
+            trader: msg.sender,
+            isLong: isLong,
+            marginToken: marginToken,
+            margin: margin,
+            size: size,
+            leverage: leverage,
+            entryPrice: currentPrice,
+            openTimestamp: uint64(block.timestamp),
+            isOpen: true,
+            pendingSettlement: false
+        });
+
+        emit PositionOpened(
+            positionId,
             msg.sender,
-            pair,
             isLong,
+            marginToken,
             margin,
+            size,
             leverage,
             currentPrice
         );
+
+        // Bridge margin to Arbitrum MarginVault via CCTP
+        _bridgeMarginToArbitrum(positionId, marginToken, margin);
     }
 
-    // ═══════════════════════════════════════════════════════════════════
-    //                      CLOSE POSITION
-    // ═══════════════════════════════════════════════════════════════════
+    // ════════════════════════════════════════════════════════════════════
+    //                         CLOSE POSITION
+    // ════════════════════════════════════════════════════════════════════
 
-    /// @notice Close an open position. Calculates PnL and requests margin withdrawal
-    ///         from Arbitrum via the off-chain relayer.
+    /// @notice Close an open position, calculate PnL, request margin withdrawal
     function closePosition(uint256 positionId) external {
         Position storage pos = positions[positionId];
-        require(pos.isOpen, "not open");
+        require(pos.isOpen, "position not open");
         require(pos.trader == msg.sender, "not your position");
         require(!pos.pendingSettlement, "already closing");
 
-        uint256 exitPrice = prices[pos.pair];
-        require(exitPrice > 0, "no price");
+        // Get current price
+        uint256 exitPrice = _getStorkPrice();
+        require(exitPrice > 0, "invalid price");
 
         // Calculate PnL
-        int256 pnl = _calculatePnl(pos.size, pos.entryPrice, exitPrice, pos.isLong);
+        int256 pnl = _calculatePnl(pos);
 
-        // Calculate funding fee
+        // Calculate funding fee (simple hourly rate)
         uint256 hoursOpen = (block.timestamp - pos.openTimestamp) / 1 hours;
         if (hoursOpen == 0) hoursOpen = 1; // minimum 1 hour
-        uint256 fundingFee = (pos.margin * fundingRatePerHour * hoursOpen) / FUNDING_RATE_PRECISION;
+        uint256 fundingFee = (pos.margin * FUNDING_RATE_PER_HOUR * hoursOpen) / FUNDING_PRECISION;
 
-        // Update position state
+        // Update position
         pos.isOpen = false;
         pos.pendingSettlement = true;
-        pos.realizedPnl = pnl;
-        pos.fundingOwed = fundingFee;
 
-        // Calculate how much to request back from Arbitrum
-        // returnAmount = margin + pnl - funding (clamped to 0)
+        // Calculate net return amount: margin + pnl - funding (clamped to 0)
         int256 netReturn = int256(pos.margin) + pnl - int256(fundingFee);
-        uint256 requestAmount = netReturn > 0 ? uint256(netReturn) : 0;
+        uint256 returnAmount = netReturn > 0 ? uint256(netReturn) : 0;
 
         emit PositionClosed(positionId, msg.sender, exitPrice, pnl, fundingFee);
 
-        // Signal off-chain relayer to withdraw from Aave and bridge back
-        emit WithdrawalRequested(positionId, msg.sender, requestAmount);
+        // If there's anything to return, request withdrawal from Arbitrum
+        if (returnAmount > 0) {
+            // Convert 18-decimal Arc amount to 6-decimal Arbitrum amount for CCTP
+            uint256 arbAmount = returnAmount / 1e12; // 18 → 6 decimals
+            
+            emit WithdrawalRequested(positionId, msg.sender, arbAmount, 0);
+            // Note: cctpNonce will be set when relayer actually bridges back
+        } else {
+            // No funds to return, settle immediately
+            pos.pendingSettlement = false;
+            emit PositionSettled(positionId, msg.sender, 0);
+        }
     }
 
-    // ═══════════════════════════════════════════════════════════════════
-    //                    SETTLEMENT (RELAYER)
-    // ═══════════════════════════════════════════════════════════════════
+    // ════════════════════════════════════════════════════════════════════
+    //                   SETTLEMENT (AFTER BRIDGE BACK)
+    // ════════════════════════════════════════════════════════════════════
 
-    /// @notice Settle a closed position after funds return from Arbitrum via CCTP.
-    /// @dev Called by owner/relayer after receiveMessage mints USDC to this contract.
-    /// @param positionId The position to settle
+    /// @notice Settle position after funds return from Arbitrum via CCTP
+    /// @dev Called by owner/relayer after receiveMessage mints tokens to this contract
     function settleWithdrawal(uint256 positionId) external onlyOwner {
         Position storage pos = positions[positionId];
-        require(pos.pendingSettlement, "not pending");
+        require(pos.pendingSettlement, "not pending settlement");
 
-        int256 netReturn = int256(pos.margin) + pos.realizedPnl - int256(pos.fundingOwed);
+        // Calculate what should be returned
+        uint256 exitPrice = _getStorkPrice();
+        int256 pnl = _calculatePnl(pos);
+        
+        uint256 hoursOpen = (block.timestamp - pos.openTimestamp) / 1 hours;
+        if (hoursOpen == 0) hoursOpen = 1;
+        uint256 fundingFee = (pos.margin * FUNDING_RATE_PER_HOUR * hoursOpen) / FUNDING_PRECISION;
+        
+        int256 netReturn = int256(pos.margin) + pnl - int256(fundingFee);
         uint256 payout = netReturn > 0 ? uint256(netReturn) : 0;
 
         pos.pendingSettlement = false;
 
         if (payout > 0) {
-            // Check we have enough USDC (from bridged-back funds)
-            uint256 balance = usdc.balanceOf(address(this));
-            require(balance >= payout, "insufficient funds for settlement");
-            require(usdc.transfer(pos.trader, payout), "payout failed");
+            // Transfer returned margin + pnl to trader
+            IERC20(pos.marginToken).transfer(pos.trader, payout);
         }
-
-        totalMarginBridged -= pos.margin; // accounting
 
         emit PositionSettled(positionId, pos.trader, payout);
     }
 
-    // ═══════════════════════════════════════════════════════════════════
-    //                     VIEW FUNCTIONS
-    // ═══════════════════════════════════════════════════════════════════
+    // ════════════════════════════════════════════════════════════════════
+    //                      VIEW FUNCTIONS
+    // ════════════════════════════════════════════════════════════════════
+
+    /// @notice Get current EUR/USD price from Stork
+    function getCurrentPrice() external view returns (uint256) {
+        return _getStorkPrice();
+    }
 
     /// @notice Get unrealized PnL for an open position
     function getUnrealizedPnl(uint256 positionId) external view returns (int256) {
         Position storage pos = positions[positionId];
-        require(pos.isOpen, "not open");
-        uint256 currentPrice = prices[pos.pair];
-        require(currentPrice > 0, "no price");
-        return _calculatePnl(pos.size, pos.entryPrice, currentPrice, pos.isLong);
+        require(pos.isOpen, "position not open");
+        return _calculatePnl(pos);
     }
 
     /// @notice Get accumulated funding fee for a position
     function getAccumulatedFunding(uint256 positionId) external view returns (uint256) {
         Position storage pos = positions[positionId];
-        if (!pos.isOpen) return pos.fundingOwed;
         uint256 hoursOpen = (block.timestamp - pos.openTimestamp) / 1 hours;
         if (hoursOpen == 0) hoursOpen = 1;
-        return (pos.margin * fundingRatePerHour * hoursOpen) / FUNDING_RATE_PRECISION;
+        return (pos.margin * FUNDING_RATE_PER_HOUR * hoursOpen) / FUNDING_PRECISION;
     }
 
-    /// @notice Get effective margin (margin + unrealized PnL - funding)
-    function getEffectiveMargin(uint256 positionId) external view returns (int256) {
-        Position storage pos = positions[positionId];
-        require(pos.isOpen, "not open");
-        uint256 currentPrice = prices[pos.pair];
-        int256 pnl = _calculatePnl(pos.size, pos.entryPrice, currentPrice, pos.isLong);
-        uint256 hoursOpen = (block.timestamp - pos.openTimestamp) / 1 hours;
-        if (hoursOpen == 0) hoursOpen = 1;
-        uint256 fundingFee = (pos.margin * fundingRatePerHour * hoursOpen) / FUNDING_RATE_PRECISION;
-        return int256(pos.margin) + pnl - int256(fundingFee);
+    /// @notice Get position details
+    function getPosition(uint256 positionId) external view returns (Position memory) {
+        return positions[positionId];
     }
 
-    // ═══════════════════════════════════════════════════════════════════
-    //                      ADMIN FUNCTIONS
-    // ═══════════════════════════════════════════════════════════════════
+    // ════════════════════════════════════════════════════════════════════
+    //                     ADMIN FUNCTIONS
+    // ════════════════════════════════════════════════════════════════════
 
-    function setFundingRate(uint256 _rate) external onlyOwner {
-        fundingRatePerHour = _rate;
-    }
-
-    function setMaxCctpFee(uint256 _fee) external onlyOwner {
-        maxCctpFee = _fee;
-    }
-
-    function setMinFinality(uint32 _finality) external onlyOwner {
-        minFinality = _finality;
+    function setStorkOracle(address _oracle) external onlyOwner {
+        storkOracle = IStorkOracle(_oracle);
     }
 
     function setMarginVault(address _vault) external onlyOwner {
@@ -428,86 +339,79 @@ contract PerpsDEX {
         owner = newOwner;
     }
 
-    /// @notice Emergency: withdraw stuck tokens
     function emergencyWithdraw(address token, uint256 amount) external onlyOwner {
         IERC20(token).transfer(owner, amount);
     }
 
-    // ═══════════════════════════════════════════════════════════════════
-    //                      INTERNAL FUNCTIONS
-    // ═══════════════════════════════════════════════════════════════════
+    // ════════════════════════════════════════════════════════════════════
+    //                    INTERNAL FUNCTIONS
+    // ════════════════════════════════════════════════════════════════════
 
-    function _openPositionInternal(
-        address trader,
-        bytes32 pair,
-        bool isLong,
-        uint256 margin,
-        uint8 leverage,
-        uint256 entryPrice
-    ) internal returns (uint256 positionId) {
-        uint256 size = margin * leverage;
+    /// @notice Bridge margin to Arbitrum MarginVault via CCTP
+    function _bridgeMarginToArbitrum(
+        uint256 positionId,
+        address token,
+        uint256 amount
+    ) internal {
+        // Approve TokenMessenger
+        IERC20(token).approve(address(tokenMessenger), amount);
 
-        positionId = nextPositionId++;
-        positions[positionId] = Position({
-            trader: trader,
-            pair: pair,
-            isLong: isLong,
-            margin: margin,
-            size: size,
-            entryPrice: entryPrice,
-            openTimestamp: uint64(block.timestamp),
-            isOpen: true,
-            pendingSettlement: false,
-            realizedPnl: 0,
-            fundingOwed: 0
-        });
-
-        // ── Bridge margin to Arbitrum Sepolia via CCTP ──
-        // Approve TokenMessenger to spend USDC
-        usdc.approve(address(tokenMessenger), margin);
-
-        // Burn USDC on Arc, will be minted to MarginVault on Arbitrum
+        // Burn tokens on Arc, will be minted to MarginVault on Arbitrum
         uint64 nonce = tokenMessenger.depositForBurn(
-            margin,
+            amount,
             ARBITRUM_SEPOLIA_DOMAIN,
-            marginVaultBytes32,       // mint to MarginVault on Arbitrum
-            address(usdc),            // burn token (USDC on Arc)
-            bytes32(0),               // anyone can call receiveMessage
-            maxCctpFee,
-            minFinality
+            marginVaultBytes32,
+            token,
+            bytes32(0), // anyone can call receiveMessage
+            0,          // no fee for testnet
+            FINALITY_STANDARD
         );
 
-        totalMarginBridged += margin;
-
-        emit PositionOpened(positionId, trader, pair, isLong, margin, size, entryPrice);
-        emit MarginBridgedOut(positionId, margin, nonce);
+        emit MarginBridged(positionId, amount, nonce);
     }
 
-    /// @notice Calculate PnL for a position
-    /// @dev Long:  PnL = size * (exit - entry) / entry
-    ///      Short: PnL = size * (entry - exit) / entry
-    function _calculatePnl(
-        uint256 size,
-        uint256 entryPrice,
-        uint256 exitPrice,
-        bool isLong
-    ) internal pure returns (int256) {
-        if (isLong) {
-            if (exitPrice >= entryPrice) {
-                return int256((size * (exitPrice - entryPrice)) / entryPrice);
+    /// @notice Get EUR/USD price from Stork Oracle
+    /// @dev Converts Stork's 18-decimal price to our 6-decimal internal format
+    function _getStorkPrice() internal view returns (uint256) {
+        (
+            bytes32 id,
+            int192 value,
+            uint64 timestamp,
+            , // qualifiers
+              // encodedAsset
+        ) = storkOracle.getTemporalNumericValueV1(EURUSD_FEED_ID);
+
+        require(id == EURUSD_FEED_ID, "invalid feed");
+        require(value > 0, "invalid price");
+        require(block.timestamp - timestamp < 1 hours, "stale price");
+
+        // Convert 18 decimals → 6 decimals
+        return uint256(uint192(value)) / 1e12;
+    }
+
+    /// @notice Calculate PnL for a position based on current price
+    /// @dev Long:  PnL = size * (currentPrice - entryPrice) / entryPrice
+    ///      Short: PnL = size * (entryPrice - currentPrice) / entryPrice
+    function _calculatePnl(Position storage pos) internal view returns (int256) {
+        uint256 currentPrice = _getStorkPrice();
+        
+        if (pos.isLong) {
+            // Long EUR: profit if EUR/USD rises
+            if (currentPrice >= pos.entryPrice) {
+                return int256((pos.size * (currentPrice - pos.entryPrice)) / pos.entryPrice);
             } else {
-                return -int256((size * (entryPrice - exitPrice)) / entryPrice);
+                return -int256((pos.size * (pos.entryPrice - currentPrice)) / pos.entryPrice);
             }
         } else {
-            if (entryPrice >= exitPrice) {
-                return int256((size * (entryPrice - exitPrice)) / entryPrice);
+            // Short EUR: profit if EUR/USD falls
+            if (pos.entryPrice >= currentPrice) {
+                return int256((pos.size * (pos.entryPrice - currentPrice)) / pos.entryPrice);
             } else {
-                return -int256((size * (exitPrice - entryPrice)) / entryPrice);
+                return -int256((pos.size * (currentPrice - pos.entryPrice)) / pos.entryPrice);
             }
         }
     }
 
-    /// @notice Convert address to bytes32 (right-padded with zeros)
     function _addressToBytes32(address addr) internal pure returns (bytes32) {
         return bytes32(uint256(uint160(addr)));
     }

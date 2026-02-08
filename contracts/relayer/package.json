@@ -1,17 +1,35 @@
 {
-  "name": "perps-dex-relayer",
-  "version": "0.1.0",
-  "private": true,
+  "name": "arctan-relayer",
+  "version": "1.0.0",
+  "description": "Cross-chain margin rehypothecation relayer for arctan(x) DEX",
+  "main": "relayer-simplified.ts",
   "scripts": {
-    "start": "npx ts-node relayer.ts",
-    "deposit": "npx ts-node relayer.ts deposit",
-    "withdraw": "npx ts-node relayer.ts withdraw"
+    "start": "ts-node relayer-simplified.ts",
+    "dev": "ts-node-dev --respawn relayer-simplified.ts",
+    "build": "tsc",
+    "test": "npm run build"
   },
+  "keywords": [
+    "cctp",
+    "aave",
+    "perps",
+    "defi",
+    "cross-chain"
+  ],
+  "author": "",
+  "license": "MIT",
   "dependencies": {
-    "ethers": "^6.13.0"
+    "ethers": "^6.10.0",
+    "dotenv": "^16.3.1"
   },
   "devDependencies": {
+    "@types/node": "^20.10.0",
     "ts-node": "^10.9.2",
-    "typescript": "^5.4.0"
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
   }
 }

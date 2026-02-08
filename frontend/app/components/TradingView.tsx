@@ -36,6 +36,21 @@ interface TradingViewProps {
 }
 
 type WalletSource = 'arc' | 'gateway';
+type RehypothecationProtocol = 'aave' | 'compound' | 'uniswap';
+
+interface Position {
+  id: number;
+  type: 'long' | 'short';
+  size: number;
+  collateral: number;
+  leverage: number;
+  entryPrice: number;
+  timestamp: string;
+  source: WalletSource;
+  protocol: RehypothecationProtocol;
+  isDepositing?: boolean;
+  isWithdrawing?: boolean;
+}
 
 function ExplorerIcon({ className = 'w-4 h-4' }: { className?: string }) {
   return (
@@ -44,6 +59,33 @@ function ExplorerIcon({ className = 'w-4 h-4' }: { className?: string }) {
     </svg>
   );
 }
+
+const PROTOCOL_INFO = {
+  aave: {
+    name: 'Aave V3',
+    chain: 'Arbitrum',
+    icon: '🏦',
+    color: 'text-purple-600',
+    bgColor: 'bg-purple-50',
+    borderColor: 'border-purple-200',
+  },
+  compound: {
+    name: 'Compound V3',
+    chain: 'Ethereum',
+    icon: '🌾',
+    color: 'text-green-600',
+    bgColor: 'bg-green-50',
+    borderColor: 'border-green-200',
+  },
+  uniswap: {
+    name: 'Uniswap V3',
+    chain: 'Base',
+    icon: '🦄',
+    color: 'text-pink-600',
+    bgColor: 'bg-pink-50',
+    borderColor: 'border-pink-200',
+  },
+};
 
 export function TradingView({ 
   onBack, 
@@ -65,8 +107,11 @@ export function TradingView({
   const [leverage, setLeverage] = useState('1');
   const [collateralAmount, setCollateralAmount] = useState('');
   const [currentPrice, setCurrentPrice] = useState<number | null>(null);
-  const [positions, setPositions] = useState<any[]>([]);
+  const [positions, setPositions] = useState<Position[]>([]);
   const [loading, setLoading] = useState(true);
+  const [rehypothecationProtocol, setRehypothecationProtocol] = useState<RehypothecationProtocol>('aave');
+  const [depositingPositionId, setDepositingPositionId] = useState<number | null>(null);
+  const [withdrawingPositionId, setWithdrawingPositionId] = useState<number | null>(null);
 
   // Local balance state for dynamic refresh
   const [arcUsdcBalance, setArcUsdcBalance] = useState(initialArcUsdc);
@@ -258,7 +303,41 @@ export function TradingView({
     return () => clearInterval(priceInterval);
   }, []);
 
-  const handleTrade = () => {
+  // Simulate margin deposit to protocol
+  const simulateMarginDeposit = async (positionId: number) => {
+    setDepositingPositionId(positionId);
+    
+    // Mark position as depositing
+    setPositions(prev => prev.map(p => 
+      p.id === positionId ? { ...p, isDepositing: true } : p
+    ));
+
+    // Simulate blockchain transaction delay (3-5 seconds)
+    await new Promise(resolve => setTimeout(resolve, 3000 + Math.random() * 2000));
+
+    // Complete deposit
+    setPositions(prev => prev.map(p => 
+      p.id === positionId ? { ...p, isDepositing: false } : p
+    ));
+    setDepositingPositionId(null);
+  };
+
+  // Simulate margin withdrawal from protocol
+  const simulateMarginWithdrawal = async (positionId: number): Promise<void> => {
+    setWithdrawingPositionId(positionId);
+    
+    // Mark position as withdrawing
+    setPositions(prev => prev.map(p => 
+      p.id === positionId ? { ...p, isWithdrawing: true } : p
+    ));
+
+    // Simulate blockchain transaction delay (3-5 seconds)
+    await new Promise(resolve => setTimeout(resolve, 3000 + Math.random() * 2000));
+
+    setWithdrawingPositionId(null);
+  };
+
+  const handleTrade = async () => {
     if (!collateralAmount || parseFloat(collateralAmount) <= 0) {
       alert('Please enter a valid collateral amount');
       return;
@@ -271,25 +350,42 @@ export function TradingView({
 
     const notionalSize = parseFloat(collateralAmount) * parseFloat(leverage);
     
-    const newPosition = {
+    const newPosition: Position = {
       id: Date.now(),
-      type: tradingTab,
+      type: tradingTab as 'long' | 'short',
       size: notionalSize,
       collateral: parseFloat(collateralAmount),
       leverage: parseFloat(leverage),
-      entryPrice: currentPrice,
+      entryPrice: currentPrice!,
       timestamp: new Date().toISOString(),
       source: walletSource,
+      protocol: rehypothecationProtocol,
+      isDepositing: false,
+      isWithdrawing: false,
     };
 
     setPositions([...positions, newPosition]);
     setCollateralAmount('');
-    alert(`${tradingTab.toUpperCase()} position opened!`);
+    
+    // Simulate margin deposit
+    await simulateMarginDeposit(newPosition.id);
+    
+    const protocolInfo = PROTOCOL_INFO[rehypothecationProtocol];
+    alert(`${tradingTab.toUpperCase()} position opened!\nMargin deposited to ${protocolInfo.name} on ${protocolInfo.chain}`);
   };
 
-  const closePosition = (positionId: number) => {
+  const closePosition = async (positionId: number) => {
+    const position = positions.find(p => p.id === positionId);
+    if (!position) return;
+
+    // Simulate margin withdrawal
+    await simulateMarginWithdrawal(positionId);
+    
+    // Remove position after withdrawal completes
     setPositions(positions.filter(p => p.id !== positionId));
-    alert('Position closed!');
+    
+    const protocolInfo = PROTOCOL_INFO[position.protocol];
+    alert(`Position closed!\nMargin withdrawn from ${protocolInfo.name}`);
   };
 
   const notionalSize = collateralAmount && leverage 
@@ -377,7 +473,7 @@ export function TradingView({
                         <th className="text-left py-3 px-4 text-xs font-semibold text-slate-600 uppercase">Collateral</th>
                         <th className="text-left py-3 px-4 text-xs font-semibold text-slate-600 uppercase">Leverage</th>
                         <th className="text-left py-3 px-4 text-xs font-semibold text-slate-600 uppercase">Entry</th>
-                        <th className="text-left py-3 px-4 text-xs font-semibold text-slate-600 uppercase">Source</th>
+                        <th className="text-left py-3 px-4 text-xs font-semibold text-slate-600 uppercase">Protocol</th>
                         <th className="text-left py-3 px-4 text-xs font-semibold text-slate-600 uppercase">PnL</th>
                         <th className="text-left py-3 px-4 text-xs font-semibold text-slate-600 uppercase"></th>
                       </tr>
@@ -392,6 +488,9 @@ export function TradingView({
                         const pnlPercent = position.collateral 
                           ? (pnl / position.collateral) * 100 
                           : 0;
+
+                        const protocolInfo = PROTOCOL_INFO[position.protocol];
+                        const isProcessing = position.isDepositing || position.isWithdrawing;
 
                         return (
                           <tr key={position.id} className="border-b border-slate-100 hover:bg-slate-50">
@@ -408,8 +507,20 @@ export function TradingView({
                             <td className="py-3 px-4 text-sm text-slate-900">${position.collateral.toFixed(2)}</td>
                             <td className="py-3 px-4 text-sm text-slate-900">{position.leverage}x</td>
                             <td className="py-3 px-4 text-sm text-slate-900">${position.entryPrice.toFixed(6)}</td>
-                            <td className="py-3 px-4 text-xs text-slate-600">
-                              {position.source === 'gateway' ? 'Gateway' : 'Arc'}
+                            <td className="py-3 px-4">
+                              {isProcessing ? (
+                                <div className={`flex items-center gap-2 ${protocolInfo.bgColor} ${protocolInfo.borderColor} border rounded px-2 py-1`}>
+                                  <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-slate-900"></div>
+                                  <span className="text-xs font-medium text-slate-700">
+                                    {position.isDepositing ? 'Depositing...' : 'Withdrawing...'}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className={`inline-flex items-center gap-1 text-xs font-medium ${protocolInfo.color}`}>
+                                  <span>{protocolInfo.icon}</span>
+                                  <span>{protocolInfo.name}</span>
+                                </span>
+                              )}
                             </td>
                             <td className="py-3 px-4">
                               <div className={`text-sm font-semibold ${pnl >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
@@ -420,9 +531,10 @@ export function TradingView({
                             <td className="py-3 px-4">
                               <button
                                 onClick={() => closePosition(position.id)}
-                                className="px-3 py-1 text-xs bg-slate-900 text-white rounded hover:bg-slate-800 transition"
+                                disabled={isProcessing}
+                                className="px-3 py-1 text-xs bg-slate-900 text-white rounded hover:bg-slate-800 transition disabled:opacity-50 disabled:cursor-not-allowed"
                               >
-                                Close
+                                {position.isWithdrawing ? 'Closing...' : 'Close'}
                               </button>
                             </td>
                           </tr>
@@ -564,6 +676,42 @@ export function TradingView({
                       )}
                     </div>
 
+                    {/* ── Margin Rehypothecation Protocol Selection ──── */}
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-3">
+                        Margin Rehypothecation
+                      </label>
+                      <div className="space-y-2">
+                        {Object.entries(PROTOCOL_INFO).map(([key, info]) => (
+                          <button
+                            key={key}
+                            onClick={() => setRehypothecationProtocol(key as RehypothecationProtocol)}
+                            className={`w-full rounded-lg p-3 border-2 text-left transition ${
+                              rehypothecationProtocol === key
+                                ? `${info.borderColor} ${info.bgColor}`
+                                : 'border-slate-200 hover:border-slate-300'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xl">{info.icon}</span>
+                                <div>
+                                  <p className={`text-sm font-semibold ${info.color}`}>{info.name}</p>
+                                  <p className="text-xs text-slate-600">{info.chain}</p>
+                                </div>
+                              </div>
+                              {rehypothecationProtocol === key && (
+                                <div className="w-2 h-2 bg-slate-900 rounded-full"></div>
+                              )}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-xs text-slate-500 mt-2">
+                        Your margin will be automatically deposited to earn yield via CCTP
+                      </p>
+                    </div>
+
                     {/* Collateral Amount */}
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-2">
@@ -637,6 +785,12 @@ export function TradingView({
                         </span>
                       </div>
                       <div className="flex justify-between text-sm">
+                        <span className="text-slate-600">Margin Protocol</span>
+                        <span className="font-semibold text-slate-900">
+                          {PROTOCOL_INFO[rehypothecationProtocol].name}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-sm">
                         <span className="text-slate-600">Type</span>
                         <span className="font-semibold text-slate-900">Market Order</span>
                       </div>
@@ -656,7 +810,7 @@ export function TradingView({
                     </button>
 
                     <p className="text-xs text-slate-500 text-center">
-                      Demo trading interface. No real funds are at risk.
+                      Demo trading interface. Margin will be deposited to {PROTOCOL_INFO[rehypothecationProtocol].name}.
                     </p>
                   </div>
                 )}

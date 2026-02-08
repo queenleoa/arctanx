@@ -246,7 +246,7 @@ contract PerpsDEX is Ownable {
     }
 
     function tokenDecimals(address token) external pure returns (uint8) {
-        if (token == ARC_USDC) return 18;
+        if (token == ARC_USDC) return 6;
         if (token == ARC_EURC) return 6;
         return 0;
     }
