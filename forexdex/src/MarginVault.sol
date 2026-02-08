@@ -5,13 +5,16 @@ import {IERC20} from "../lib/openzeppelin-contracts/contracts/token/ERC20/IERC20
 import {SafeERC20} from "../lib/openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Ownable} from "../lib/openzeppelin-contracts/contracts/access/Ownable.sol";
 
-/// @notice Minimal CCTP V2 TokenMessenger interface
+/// @notice CCTP V2 TokenMessenger interface
+/// @dev V2 adds destinationCaller and maxBurnFee params vs V1
 interface ITokenMessenger {
     function depositForBurn(
         uint256 amount,
         uint32 destinationDomain,
         bytes32 mintRecipient,
-        address burnToken
+        address burnToken,
+        bytes32 destinationCaller,
+        uint256 maxBurnFee
     ) external returns (uint64 nonce);
 }
 
@@ -99,7 +102,7 @@ contract MarginVault is Ownable {
     }
 
     // ═════════════════════════════════════════════════════════════════════
-    //  RETURN MARGIN — CCTP burn back to PerpsDEX on Arc
+    //  RETURN MARGIN — CCTP V2 burn back to PerpsDEX on Arc
     // ═════════════════════════════════════════════════════════════════════
     /// @notice Burns margin via CCTP to send back to PerpsDEX on Arc.
     ///         Called by relayer when a position close is initiated.
@@ -120,11 +123,14 @@ contract MarginVault is Ownable {
         // Approve CCTP and burn → mints on Arc to PerpsDEX
         IERC20(deposit.token).approve(TOKEN_MESSENGER, deposit.amount);
 
+        // CCTP V2: destinationCaller=0 (anyone can relay), maxBurnFee=max
         cctpNonce = ITokenMessenger(TOKEN_MESSENGER).depositForBurn(
             deposit.amount,
             ARC_DOMAIN,
             perpsDexRecipient,
-            deposit.token
+            deposit.token,
+            bytes32(0),             // destinationCaller: no restriction
+            type(uint256).max       // maxBurnFee: accept any fee
         );
 
         emit MarginReturned(positionId, deposit.token, deposit.amount, cctpNonce);

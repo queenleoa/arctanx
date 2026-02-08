@@ -5,13 +5,16 @@ import {IERC20} from "../lib/openzeppelin-contracts/contracts/token/ERC20/IERC20
 import {SafeERC20} from "../lib/openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Ownable} from "../lib/openzeppelin-contracts/contracts/access/Ownable.sol";
 
-/// @notice Minimal CCTP V2 TokenMessenger interface
+/// @notice CCTP V2 TokenMessenger interface
+/// @dev V2 adds destinationCaller and maxBurnFee params vs V1
 interface ITokenMessenger {
     function depositForBurn(
         uint256 amount,
         uint32 destinationDomain,
         bytes32 mintRecipient,
-        address burnToken
+        address burnToken,
+        bytes32 destinationCaller,
+        uint256 maxBurnFee
     ) external returns (uint64 nonce);
 }
 
@@ -100,7 +103,7 @@ contract PerpsDEX is Ownable {
     }
 
     // ═════════════════════════════════════════════════════════════════════
-    //  OPEN POSITION — transfers margin cross-chain via CCTP
+    //  OPEN POSITION — transfers margin cross-chain via CCTP V2
     // ═════════════════════════════════════════════════════════════════════
     function openPosition(
         address marginToken,
@@ -118,15 +121,17 @@ contract PerpsDEX is Ownable {
         IERC20(marginToken).safeTransferFrom(msg.sender, address(this), marginAmount);
 
         // Approve CCTP (use forceApprove for Arc USDC compatibility)
-        // Arc USDC requires clearing previous allowance before setting new one
         IERC20(marginToken).forceApprove(TOKEN_MESSENGER, marginAmount);
         
-        // Burn → mints on Arb Sepolia to MarginVault
+        // CCTP V2: depositForBurn with destinationCaller=0 (anyone can relay)
+        //          and maxBurnFee=type(uint256).max (accept any fee, typically 0 on testnet)
         uint64 cctpNonce = ITokenMessenger(TOKEN_MESSENGER).depositForBurn(
             marginAmount,
             ARB_SEPOLIA_DOMAIN,
             marginVaultRecipient,
-            marginToken
+            marginToken,
+            bytes32(0),             // destinationCaller: no restriction
+            type(uint256).max       // maxBurnFee: accept any fee
         );
 
         // Record position
